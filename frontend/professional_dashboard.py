@@ -21,6 +21,7 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from frontend.utils.api_client import get_api_client
 from data.mock.generator import MockDataGenerator
 from data.mock.scenarios import SCENARIOS
+from frontend.components import scenario_display
 
 # Page configuration
 st.set_page_config(
@@ -137,6 +138,10 @@ def main():
     </div>
     """, unsafe_allow_html=True)
     
+    # Scenario Banner - Display current scenario
+    if st.session_state.selected_scenario:
+        scenario_display.render_scenario_banner(st.session_state.selected_scenario)
+    
     # Control Panel
     render_control_panel()
     
@@ -155,6 +160,14 @@ def main():
     
     # Main Dashboard
     render_risk_dashboard()
+    
+    # Scenario-Specific Metrics
+    if st.session_state.current_data and st.session_state.selected_scenario:
+        st.markdown("---")
+        scenario_display.render_scenario_metrics(
+            st.session_state.selected_scenario,
+            st.session_state.current_data
+        )
     
     # Process Parameters
     if st.session_state.current_data:

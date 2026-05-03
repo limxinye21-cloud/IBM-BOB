@@ -103,17 +103,17 @@ async def analyze_root_cause(
         if not process_data_record:
             raise HTTPException(status_code=404, detail=f"No data found for batch {request.batch_id}")
         
-        # Convert to dict
+        # Convert to dict with null safety
         process_data = {
-            'batch_id': process_data_record.batch_id,
-            'status': process_data_record.status,
-            'die_temperature': process_data_record.die_temperature,
-            'die_void_percentage': process_data_record.die_void_percentage,
-            'wire_bonding_force': process_data_record.wire_bonding_force,
-            'wire_pull_strength': process_data_record.wire_pull_strength,
-            'mold_voids': process_data_record.mold_voids,
-            'inspect_reliability_score': process_data_record.inspect_reliability_score,
-            'inspect_defect_count': process_data_record.inspect_defect_count
+            'batch_id': process_data_record.batch_id or 'UNKNOWN',
+            'status': process_data_record.status or 'UNKNOWN',
+            'die_temperature': process_data_record.die_temperature or 0.0,
+            'die_void_percentage': process_data_record.die_void_percentage or 0.0,
+            'wire_bonding_force': process_data_record.wire_bonding_force or 0.0,
+            'wire_pull_strength': process_data_record.wire_pull_strength or 0.0,
+            'mold_voids': process_data_record.mold_voids or 0.0,
+            'inspect_reliability_score': process_data_record.inspect_reliability_score or 0.0,
+            'inspect_defect_count': process_data_record.inspect_defect_count or 0
         }
         
         # Simple root cause analysis
@@ -245,13 +245,13 @@ async def get_recent_interactions(
             'count': len(interactions),
             'interactions': [
                 {
-                    'id': i.id,
-                    'user_query': i.user_query,
-                    'bob_response': i.bob_response,
-                    'response_time_ms': i.response_time_ms,
-                    'timestamp': i.timestamp.isoformat()
+                    'id': getattr(i, 'id', None),
+                    'user_query': getattr(i, 'user_query', ''),
+                    'bob_response': getattr(i, 'bob_response', ''),
+                    'response_time_ms': getattr(i, 'response_time_ms', 0),
+                    'timestamp': i.timestamp.isoformat() if i.timestamp is not None else ''
                 }
-                for i in interactions
+                for i in interactions if i is not None
             ]
         }
         
@@ -285,12 +285,12 @@ async def get_interaction(
         return {
             'success': True,
             'interaction': {
-                'id': interaction.id,
-                'user_query': interaction.user_query,
-                'bob_response': interaction.bob_response,
-                'response_time_ms': interaction.response_time_ms,
-                'context': interaction.context,
-                'timestamp': interaction.timestamp.isoformat()
+                'id': getattr(interaction, 'id', None),
+                'user_query': getattr(interaction, 'user_query', ''),
+                'bob_response': getattr(interaction, 'bob_response', ''),
+                'response_time_ms': getattr(interaction, 'response_time_ms', 0),
+                'context': getattr(interaction, 'context', None),
+                'timestamp': interaction.timestamp.isoformat() if interaction.timestamp is not None else ''
             }
         }
         
