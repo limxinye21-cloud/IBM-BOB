@@ -395,7 +395,7 @@ def render_stage_health_radar(stage_scores: Dict[str, float]) -> None:
         r=[85] * (len(categories) + 1),
         theta=categories_closed,
         mode='lines',
-        line=dict(color='#42be6540', width=1, dash='dot'),
+        line=dict(color='rgba(66,190,101,0.25)', width=1, dash='dot'),
         showlegend=False,
         hoverinfo='skip'
     ))

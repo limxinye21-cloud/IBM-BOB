@@ -183,6 +183,11 @@ def process_query(query: str, api_client, current_data: Optional[Dict]):
     context = {}
     if current_data:
         context['current_data'] = current_data
+    # Pass active scenario so copilot can give scenario-specific advice
+    import streamlit as _st
+    active_scenario = _st.session_state.get('active_scenario', 'Normal')
+    if active_scenario and active_scenario != 'Normal':
+        context['active_scenario'] = active_scenario
     
     # Call copilot API
     try:
@@ -273,10 +278,14 @@ def render_quick_actions(api_client, current_data: Optional[Dict]):
                 
                 if interactions:
                     for interaction in interactions[:5]:
-                        with st.expander(f"Q: {interaction['query'][:50]}..."):
-                            st.markdown(f"**Query**: {interaction['query']}")
-                            st.markdown(f"**Response**: {interaction['response'][:200]}...")
-                            st.caption(f"Type: {interaction['query_type']} | Confidence: {interaction['confidence']:.1%}")
+                        user_query = interaction.get('user_query', 'N/A')
+                        bob_response = interaction.get('bob_response', '')
+                        timestamp = interaction.get('timestamp', '')
+                        
+                        with st.expander(f"Q: {user_query[:50]}..."):
+                            st.markdown(f"**Query**: {user_query}")
+                            st.markdown(f"**Response**: {bob_response[:200] if bob_response else 'N/A'}...")
+                            st.caption(f"Time: {timestamp}")
                 else:
                     st.info("No interaction history yet")
 

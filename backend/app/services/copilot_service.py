@@ -129,6 +129,299 @@ STAGE_COMMON_ISSUES = {
     "inspection":   ["electrical failures", "visual surface defects", "dimensional drift"],
 }
 
+# --------------------------------------------------------------------------- #
+# Scenario profiles — full domain knowledge per failure mode
+# Each "conditions" entry is (param, op, threshold) and is evaluated against live data.
+# Multiple conditions are OR-ed to detect partial matches; score = matches/total.
+# --------------------------------------------------------------------------- #
+SCENARIO_PROFILES: Dict[str, Dict] = {
+    "normal": {
+        "name": "Normal Operation",
+        "conditions": [],
+        "affected_stages": [],
+        "cascade_risks": [],
+        "decision": "✅ CONTINUE",
+        "root_cause": "All process parameters within normal operating range. No intervention required.",
+        "immediate_actions": [
+            "Continue normal production schedule",
+            "Maintain regular SPC monitoring cadence (every 20–25 units)",
+        ],
+        "corrective_actions": [
+            "No corrective action needed",
+            "Consider minor fine-tuning if any parameter drifts within 10% of warning boundary",
+        ],
+        "spc_action": "Normal monitoring — no action required",
+        "ml_expected": "GOOD",
+    },
+    "die_attach_drift": {
+        "name": "Die Attach Temperature Drift",
+        "conditions": [
+            ("die_temperature", ">", 192),
+            ("die_temperature", "<", 178),
+            ("die_void_percentage", ">", 3.0),
+        ],
+        "affected_stages": ["die_attach"],
+        "cascade_risks": [
+            "Voids >5% will cascade → inspect_reliability_score drops ≥15 points",
+            "Placement error >15 μm cascades → wire bonding force mis-tuned",
+        ],
+        "decision": "⚠️ ADJUST",
+        "root_cause": (
+            "Die attach oven temperature controller drift or thermocouple degradation. "
+            "Gradual temperature rise drives epoxy outgassing → void formation. "
+            "Root cause: oven PID drift, thermocouple ageing, or incorrect epoxy batch."
+        ),
+        "immediate_actions": [
+            "Verify die attach oven temperature with external calibrated thermocouple",
+            "Inspect thermocouple sensor for drift or mechanical damage",
+            "Sample 3 units under X-ray for void percentage confirmation",
+            "Review epoxy dispense volume and pot-life timer",
+        ],
+        "corrective_actions": [
+            "Recalibrate oven PID controller — target 180–190 °C (±2 °C)",
+            "Replace thermocouple if measured deviation > 3 °C from setpoint",
+            "Reduce epoxy dispense volume by 5% if voids > 3%",
+            "Check epoxy batch date code — discard if > 6 months old",
+            "Run 5 qualification units before resuming full production",
+        ],
+        "spc_action": "Trigger SPC out-of-control signal. Quarantine last 10 units pending X-ray.",
+        "ml_expected": "WARNING → SEVERE",
+    },
+    "wire_bonding_failure": {
+        "name": "Wire Bonding Failure",
+        "conditions": [
+            ("wire_pull_strength", "<", 6.0),
+            ("wire_bonding_force", "<", 35.0),
+            ("wire_bonding_force", ">", 55.0),
+            ("wire_ultrasonic_power", "<", 70.0),
+            ("wire_ultrasonic_power", ">", 110.0),
+        ],
+        "affected_stages": ["wire_bonding"],
+        "cascade_risks": [
+            "Weak bonds (pull <6 gf) → direct inspection failure (electrical test FAIL)",
+            "Low loop height (<200 μm) → mold temperature drops → wire sweep risk",
+        ],
+        "decision": "🛑 STOP BATCH",
+        "root_cause": (
+            "Wire bonding machine capillary wear, incorrect force/power settings, or "
+            "substrate pad contamination. Weak bonds result from insufficient metal-to-metal "
+            "diffusion at the bond interface. Pull strength <6 gf indicates imminent open-circuit risk."
+        ),
+        "immediate_actions": [
+            "STOP production — perform 100% wire pull test on current units",
+            "Inspect bonding capillary under 100× microscope for wear, plugging, or contamination",
+            "Verify ultrasonic power amplitude with calibrated power meter",
+            "Check substrate pad surface for oxidation, contamination, or intermetallic growth",
+        ],
+        "corrective_actions": [
+            "Replace capillary (typical lifespan: 30,000–50,000 bonds)",
+            "Recalibrate bond force to 40–52 gf using bond tester load cell",
+            "Adjust ultrasonic power to 85–100 mW",
+            "Clean substrate pads with IPA wipe; bake at 120 °C for 30 min to remove moisture",
+            "Run 10 bond optimization coupons before restarting production",
+        ],
+        "spc_action": "CRITICAL HOLD — Do not ship. Escalate to process engineer. Review last 50 bonded units.",
+        "ml_expected": "SEVERE",
+    },
+    "molding_issue": {
+        "name": "Molding Compound Issue",
+        "conditions": [
+            ("mold_voids", ">", 1.5),
+            ("mold_compound_viscosity", ">", 155.0),
+            ("mold_compound_viscosity", "<", 80.0),
+            ("mold_fill_time", ">", 6.0),
+        ],
+        "affected_stages": ["molding"],
+        "cascade_risks": [
+            "Mold voids >2% → cure uniformity degrades (+1.5°C non-uniformity)",
+            "Incomplete fill → visual defects at inspection",
+        ],
+        "decision": "⚠️ ADJUST",
+        "root_cause": (
+            "Mold compound batch variability (viscosity out-of-spec), incorrect transfer "
+            "pressure/speed, or contaminated mold cavity causing void inclusions or incomplete fill. "
+            "High viscosity (>155 Pa·s) indicates compound age or cold storage issue."
+        ),
+        "immediate_actions": [
+            "Check mold compound batch certificate (viscosity spec: 115–140 Pa·s)",
+            "Inspect mold cavity for contamination, residue buildup, or runner blockage",
+            "Review transfer pressure and plunger speed settings",
+            "Perform short-shot test (50% fill) to observe fill pattern and void locations",
+        ],
+        "corrective_actions": [
+            "Replace mold compound if viscosity outside 80–155 Pa·s acceptance range",
+            "Clean mold cavity with mold-release agent and lint-free wipe",
+            "Adjust transfer speed to 11–14 mm/s; verify plunger position sensor",
+            "Increase mold temperature by 2–3°C to reduce compound viscosity",
+            "Apply vacuum assist molding if voids persist after pressure/speed adjustment",
+        ],
+        "spc_action": "Quarantine affected batch. Sample 10% for X-ray void inspection before shipment.",
+        "ml_expected": "WARNING → SEVERE",
+    },
+    "curing_incomplete": {
+        "name": "Incomplete Curing",
+        "conditions": [
+            ("cure_time", "<", 120.0),
+            ("cure_temperature", "<", 178.0),
+            ("cure_uniformity", ">", 2.5),
+        ],
+        "affected_stages": ["curing"],
+        "cascade_risks": [
+            "Under-cure → inspect_reliability_score drops (cure_time <120 min → -10 pts)",
+            "Under-cure → long-term field delamination, moisture absorption, popcorn cracking",
+        ],
+        "decision": "🛑 STOP BATCH",
+        "root_cause": (
+            "Cure oven malfunction — insufficient temperature or cure time. "
+            "Root causes: oven heater element failure, door seal degradation allowing heat loss, "
+            "incorrect recipe loaded, or thermocouple failure showing false 'at temperature' reading."
+        ),
+        "immediate_actions": [
+            "Stop oven immediately — verify temperature with calibrated Pt100 reference probe",
+            "Inspect oven door seals for gaps, wear, or deformation",
+            "Check cure profile recipe — confirm correct time (140–165 min) and temperature (178–184°C)",
+            "Measure thermal uniformity: ±2°C max across all rack positions",
+        ],
+        "corrective_actions": [
+            "Re-cure incomplete batch at 180°C for 150 min if gel time not exceeded",
+            "Recalibrate oven controller — verify setpoint vs. actual temperature",
+            "Replace door seals if temperature drop at door > 3°C",
+            "Reposition units to center rack zone if uniformity > 2.5°C",
+            "Perform DMA (Dynamic Mechanical Analysis) on 3 samples to verify Tg after re-cure",
+        ],
+        "spc_action": "HOLD all units from this cure lot. Mandatory reliability re-test before release.",
+        "ml_expected": "SEVERE",
+    },
+    "inspection_failure": {
+        "name": "Inspection Failure",
+        "conditions": [
+            ("inspect_defect_count", ">=", 3.0),
+            ("inspect_electrical_test", "==", 0.0),
+            ("inspect_reliability_score", "<", 85.0),
+            ("inspect_visual_score", "<", 85.0),
+        ],
+        "affected_stages": ["inspection"],
+        "cascade_risks": [
+            "Electrical test failure → direct batch rejection, no rework possible",
+            "Multiple defects → traceability review required for all units in batch",
+        ],
+        "decision": "🛑 EMERGENCY STOP",
+        "root_cause": (
+            "Multiple upstream process failures (die attach voids, weak bonds, or mold defects) "
+            "propagating to final inspection, OR systematic contamination in cleanroom. "
+            "Electrical failure combined with visual defects indicates multi-stage breakdown."
+        ),
+        "immediate_actions": [
+            "HALT PRODUCTION — quarantine entire batch immediately",
+            "Do not ship any units from this batch",
+            "Notify quality manager and document defect types with photos",
+            "Preserve all process logs (oven profiles, bond charts, mold records) for analysis",
+        ],
+        "corrective_actions": [
+            "100% inspection of all units in current and previous batch",
+            "Failure analysis: cross-section 3 failed units to identify defect origin",
+            "5-Why root cause analysis — trace back through die attach → wire bond → mold",
+            "Implement corrective action at root stage before restarting",
+            "Customer notification required if any units in transit",
+        ],
+        "spc_action": "CRITICAL STOP — Quality hold on entire batch. Do not ship. Customer notification mandatory.",
+        "ml_expected": "SEVERE",
+    },
+    "cascading_failure": {
+        "name": "Cascading Multi-Stage Failure",
+        "conditions": [
+            ("die_void_percentage", ">", 5.0),
+            ("wire_pull_strength", "<", 6.0),
+            ("inspect_reliability_score", "<", 85.0),
+            ("inspect_defect_count", ">=", 3.0),
+        ],
+        "affected_stages": ["die_attach", "wire_bonding", "inspection"],
+        "cascade_risks": [
+            "Die voids → reduced bonding area → weak bonds → electrical failure",
+            "Multiple stage failures indicate common root cause (material or environment)",
+        ],
+        "decision": "🛑 EMERGENCY STOP",
+        "root_cause": (
+            "Systemic failure originating in die attach (high voids) cascading through wire bonding "
+            "(reduced bond area on voided die pad) to inspection failure. "
+            "Possible common root cause: substrate contamination, epoxy outgassing, or cleanroom particulate event."
+        ),
+        "immediate_actions": [
+            "EMERGENCY STOP — halt entire production line immediately",
+            "Do not process any in-queue units — quarantine all in-progress work",
+            "Alert process engineer and quality manager immediately (escalation required)",
+            "Preserve all tooling, materials, and environment logs for failure analysis",
+        ],
+        "corrective_actions": [
+            "Material traceability review: audit substrate lot, epoxy batch, wire spool",
+            "Environmental audit: check cleanroom particle count, temperature, and humidity",
+            "Full equipment calibration audit: die bonder, wire bonder, and cure oven",
+            "Systematic 5-Why analysis across all three affected stages before restart",
+            "Run 20-unit qualification build before resuming production",
+        ],
+        "spc_action": "EMERGENCY SHUTDOWN — Production stop mandatory. Quality hold on all units. Executive notification.",
+        "ml_expected": "SEVERE (multi-stage)",
+    },
+    "intermittent_warning": {
+        "name": "Intermittent Process Warning",
+        "conditions": [
+            ("wire_bonding_force", "<", 40.0),
+            ("wire_bonding_force", ">", 52.0),
+            ("wire_ultrasonic_power", "<", 85.0),
+            ("wire_ultrasonic_power", ">", 100.0),
+            ("die_temperature", ">", 190.0),
+        ],
+        "affected_stages": ["wire_bonding"],
+        "cascade_risks": [
+            "Sustained warning over 10–20 cycles may escalate to wire bonding failure",
+        ],
+        "decision": "⚠️ MONITOR",
+        "root_cause": (
+            "Gradual equipment drift or process instability — typical causes: capillary wear "
+            "(early stage), substrate batch-to-batch variation, or environmental factors "
+            "(temperature/humidity changes in bonding area). Not yet critical but trending toward threshold."
+        ),
+        "immediate_actions": [
+            "Increase monitoring frequency to every 5 units",
+            "Enable SPC control charts for wire bonding parameters",
+            "Sample 5 units for destructive wire pull test to validate actual bond strength",
+            "Check bonding area environment (temperature, humidity, particle count)",
+        ],
+        "corrective_actions": [
+            "Schedule capillary replacement at next maintenance window",
+            "Tighten wire bonding process window by 10% as precaution",
+            "Verify substrate batch consistency with supplier CoC",
+            "Confirm environmental controls: 22±1°C, <50% RH in wire bonding area",
+        ],
+        "spc_action": "Add to SPC monitoring queue. Review at next shift change. Trend chart mandatory.",
+        "ml_expected": "WARNING",
+    },
+}
+
+
+def _evaluate_scenario_conditions(data: Dict, conditions: List) -> float:
+    """
+    Evaluate how many scenario signature conditions are met.
+    Returns match ratio [0.0, 1.0].
+    """
+    if not conditions:
+        return 0.0
+    matched = 0
+    for param, op, threshold in conditions:
+        val = data.get(param)
+        if val is None:
+            continue
+        try:
+            val = float(val)
+            if op == ">"  and val >  threshold: matched += 1
+            elif op == "<"  and val <  threshold: matched += 1
+            elif op == ">=" and val >= threshold: matched += 1
+            elif op == "<=" and val <= threshold: matched += 1
+            elif op == "==" and val == threshold: matched += 1
+        except (TypeError, ValueError):
+            continue
+    return matched / len(conditions)
+
 
 class CopilotService:
     """
@@ -149,11 +442,17 @@ class CopilotService:
         """Route a natural-language query to the right handler."""
         q = query.lower()
 
+        # Consolidated decision handler — highest priority
+        if any(w in q for w in ["decision", "assess", "evaluate", "diagnose",
+                                  "what should i", "what to do", "give me a decision",
+                                  "full report", "complete assessment", "status report"]):
+            return self._handle_decision_query(query, context)
         if any(w in q for w in ["health", "score", "stage score", "how healthy"]):
             return self._handle_health_query(query, context)
         if any(w in q for w in ["forecast", "predict future", "will it", "trend", "drift"]):
             return self._handle_forecast_query(query, context)
-        if any(w in q for w in ["why", "reason", "cause", "root cause"]):
+        if any(w in q for w in ["why", "reason", "cause", "root cause",
+                                  "alert", "critical", "severe", "urgent"]):
             return self._handle_why_query(query, context)
         if any(w in q for w in ["analyze", "analysis", "check", "inspect"]):
             return self._handle_analysis_query(query, context)
@@ -163,10 +462,43 @@ class CopilotService:
             return self._handle_explanation_query(query, context)
         if any(w in q for w in ["compare", "difference", "versus", "vs"]):
             return self._handle_comparison_query(query, context)
-        if any(w in q for w in ["alert", "critical", "severe", "urgent"]):
-            return self._handle_why_query(query, context)
+        if any(w in q for w in ["scenario", "mode", "failure mode"]):
+            return self._handle_decision_query(query, context)
 
         return self._handle_general_query(query, context)
+
+    def _detect_scenario(self, data: Dict) -> Tuple[str, Dict, float]:
+        """
+        Identify the most likely active failure scenario from live parameter data.
+
+        Strategy:
+          1. Cascading failure takes priority — it has the most conditions matched.
+          2. For the rest, pick the scenario with the highest condition match ratio.
+          3. Fall back to 'normal' if no scenario scores above 0.
+
+        Returns:
+            (scenario_key, scenario_profile, confidence)
+        """
+        scores: Dict[str, float] = {}
+        for key, profile in SCENARIO_PROFILES.items():
+            if key == "normal":
+                continue
+            score = _evaluate_scenario_conditions(data, profile["conditions"])
+            if score > 0:
+                scores[key] = score
+
+        if not scores:
+            return "normal", SCENARIO_PROFILES["normal"], 0.95
+
+        # Cascading failure: override if both die_void AND wire_pull AND reliability all fail
+        cascade_conds = [c for c in SCENARIO_PROFILES["cascading_failure"]["conditions"]]
+        cascade_score = _evaluate_scenario_conditions(data, cascade_conds)
+        if cascade_score >= 0.5:
+            scores["cascading_failure"] = cascade_score + 0.2  # boost priority
+
+        best = max(scores, key=lambda k: scores[k])
+        conf = min(0.50 + scores[best] * 0.48, 0.98)
+        return best, SCENARIO_PROFILES[best], round(conf, 2)
 
     def add_to_history(self, data: Dict):
         """Append a process data point to the session trend buffer (max 50)."""
@@ -307,6 +639,9 @@ class CopilotService:
         status = data.get("predicted_status", data.get("status", "UNKNOWN"))
         abnormal = self._identify_abnormal_parameters(data)
 
+        # Scenario detection
+        scenario_key, scenario_profile, scenario_conf = self._detect_scenario(data)
+
         if self.ml_service.is_loaded():
             explanation = self.ml_service.explain_prediction(data, top_n=5)
             top_features = explanation.get("top_contributors", [])
@@ -314,8 +649,18 @@ class CopilotService:
             top_features = []
 
         if status == "SEVERE":
-            answer = "## Root Cause Analysis — SEVERE\n\n"
-            answer += "The batch has been classified **SEVERE**. Critical parameters:\n\n"
+            answer = f"## 🔴 Root Cause Analysis — SEVERE\n\n"
+
+            # Scenario identification block
+            if scenario_key != "normal":
+                answer += (
+                    f"### Detected Failure Mode: **{scenario_profile['name']}**  "
+                    f"*(confidence {scenario_conf:.0%})*\n\n"
+                    f"**Affected Stages:** {', '.join(s.replace('_', ' ').title() for s in scenario_profile['affected_stages'])}\n\n"
+                    f"**Root Cause:** {scenario_profile['root_cause']}\n\n"
+                )
+
+            answer += "**Critical Parameters:**\n\n"
             for param, info in abnormal[:4]:
                 arrow = "↑" if info["value"] > info["normal_max"] else "↓"
                 answer += (
@@ -323,26 +668,43 @@ class CopilotService:
                     f"*(normal: {info['normal_min']}–{info['normal_max']} {info['unit']})*\n"
                     f"  → {info['impact']}\n"
                 )
+
             if top_features:
                 answer += "\n**ML Feature Drivers:**\n"
                 for f in top_features[:3]:
                     answer += f"  - {f['feature']}: {f['importance']:.1%} importance\n"
+
             cross = self._analyze_cross_stage_impact(data, abnormal)
             if cross:
                 answer += f"\n**Cross-Stage Cascade Risk:**\n{cross}"
+
+            if scenario_key != "normal" and scenario_profile.get("cascade_risks"):
+                answer += "\n**Scenario Cascade Risks:**\n"
+                for risk in scenario_profile["cascade_risks"]:
+                    answer += f"  - {risk}\n"
+
+            answer += f"\n**Recommended Decision:** {scenario_profile.get('decision', '⚠️ ADJUST')}"
             conf = 0.92
 
         elif status == "WARNING":
-            answer = "## Status Analysis — WARNING\n\n"
-            answer += "Parameters outside normal range (monitor closely):\n\n"
+            answer = f"## ⚠️ Status Analysis — WARNING\n\n"
+
+            if scenario_key != "normal":
+                answer += (
+                    f"**Likely Scenario:** {scenario_profile['name']} *(conf {scenario_conf:.0%})*\n\n"
+                    f"**Root Cause:** {scenario_profile['root_cause']}\n\n"
+                )
+
+            answer += "**Parameters outside normal range (monitor closely):**\n\n"
             for param, info in abnormal[:3]:
-                answer += f"- **{param}**: `{info['value']:.2f} {info['unit']}` (out of {info['normal_min']}–{info['normal_max']})\n"
+                arrow = "↑" if info["value"] > info["normal_max"] else "↓"
+                answer += f"- **{param}** {arrow} `{info['value']:.2f} {info['unit']}` (range: {info['normal_min']}–{info['normal_max']})\n"
             answer += "\n*Escalation to SEVERE is likely if not corrected within 5–10 cycles.*"
             conf = 0.82
 
         else:
             answer = (
-                "## Status Analysis — GOOD\n\n"
+                "## ✅ Status Analysis — GOOD\n\n"
                 "All parameters are within normal operating ranges.\n"
                 "No immediate action required. Continue scheduled monitoring."
             )
@@ -354,6 +716,7 @@ class CopilotService:
             "confidence": conf,
             "abnormal_parameters": abnormal,
             "top_features": top_features,
+            "detected_scenario": scenario_key,
             "actions": ["review_parameters"],
         }
 
@@ -386,7 +749,10 @@ class CopilotService:
         status = data.get("predicted_status", data.get("status", "UNKNOWN"))
         abnormal = self._identify_abnormal_parameters(data)
 
-        if not abnormal:
+        # Detect active scenario for specific advice
+        scenario_key, scenario_profile, scenario_conf = self._detect_scenario(data)
+
+        if not abnormal and scenario_key == "normal":
             return {
                 "type": "recommendation",
                 "answer": (
@@ -399,18 +765,41 @@ class CopilotService:
                 "actions": ["continue_monitoring"],
             }
 
+        answer = f"## 🔧 Optimization Recommendations ({status})\n\n"
+
+        # Scenario-specific block first if a scenario is detected
+        if scenario_key != "normal":
+            answer += (
+                f"### Detected: **{scenario_profile['name']}**  *(conf {scenario_conf:.0%})*\n\n"
+                f"**Decision: {scenario_profile['decision']}**\n\n"
+            )
+            if scenario_profile.get("immediate_actions"):
+                answer += "#### ⚡ Immediate Actions (do now)\n"
+                for i, action in enumerate(scenario_profile["immediate_actions"], 1):
+                    answer += f"{i}. {action}\n"
+                answer += "\n"
+            if scenario_profile.get("corrective_actions"):
+                answer += "#### 🔨 Corrective Actions (root-cause fix)\n"
+                for i, action in enumerate(scenario_profile["corrective_actions"], 1):
+                    answer += f"{i}. {action}\n"
+                answer += "\n"
+            answer += f"**SPC/Quality Action:** {scenario_profile.get('spc_action', 'Monitor closely')}\n\n"
+            answer += "---\n\n"
+
+        # Parameter-level recommendations
         recommendations = [self._generate_recommendation(p, i) for p, i in abnormal[:5]]
         recommendations = [r for r in recommendations if r]
+        if recommendations:
+            answer += "#### 📊 Parameter-Level Adjustments\n\n"
+            for idx, rec in enumerate(recommendations, 1):
+                badge = "🔴 CRITICAL" if rec["priority"] == "CRITICAL" else "🟡 MEDIUM"
+                answer += (
+                    f"**{idx}. {rec['parameter']}** {badge}\n"
+                    f"- Current: `{rec['current']:.2f} {rec['unit']}`\n"
+                    f"- Target: `{rec['target_min']:.1f}–{rec['target_max']:.1f} {rec['unit']}`\n"
+                    f"- Action: {rec['action']}\n\n"
+                )
 
-        answer = f"## Optimization Recommendations ({status})\n\n"
-        for idx, rec in enumerate(recommendations, 1):
-            badge = "🔴 CRITICAL" if rec["priority"] == "CRITICAL" else "🟡 MEDIUM"
-            answer += (
-                f"### {idx}. {rec['parameter']} {badge}\n"
-                f"- Current: **{rec['current']:.2f} {rec['unit']}**\n"
-                f"- Target: **{rec['target_min']:.1f}–{rec['target_max']:.1f} {rec['unit']}**\n"
-                f"- Action: {rec['action']}\n\n"
-            )
         answer += (
             "**Implementation Order:**\n"
             "1. Address CRITICAL items first\n"
@@ -423,6 +812,7 @@ class CopilotService:
             "answer": answer,
             "confidence": 0.87,
             "recommendations": recommendations,
+            "detected_scenario": scenario_key,
             "actions": ["implement_recommendations"],
         }
 
@@ -481,6 +871,129 @@ class CopilotService:
 
         return {"type": "comparison", "answer": answer, "confidence": 0.88, "actions": []}
 
+    def _handle_decision_query(self, query: str, context: Optional[Dict]) -> Dict:
+        """
+        Consolidated AI Decision Assistant — master handler.
+        Aggregates: ML status, scenario detection, health scores, abnormal params,
+        cascade risks, and ranked action plan into one authoritative response.
+        """
+        if not context or "current_data" not in context:
+            return self._no_data_response("decision")
+
+        data = context["current_data"]
+        status = data.get("predicted_status", data.get("status", "UNKNOWN"))
+        confidence = data.get("confidence", 0.0)
+        batch_id = data.get("batch_id", "N/A")
+
+        # Gather all intelligence
+        health = self.get_process_health(data)
+        abnormal = self._identify_abnormal_parameters(data)
+        scenario_key, scenario_profile, scenario_conf = self._detect_scenario(data)
+
+        if self.ml_service.is_loaded():
+            explanation = self.ml_service.explain_prediction(data, top_n=3)
+            top_features = explanation.get("top_contributors", [])
+        else:
+            top_features = []
+
+        # Status icon
+        status_icon = {"GOOD": "✅", "WARNING": "⚠️", "SEVERE": "🔴"}.get(status, "❓")
+        decision = scenario_profile.get("decision", "⚠️ MONITOR")
+
+        # Build comprehensive response
+        answer = f"# 🤖 AI Decision Report — Batch {batch_id}\n\n"
+        answer += f"---\n\n"
+
+        # --- EXECUTIVE SUMMARY ---
+        answer += f"## Executive Summary\n\n"
+        answer += f"| Item | Value |\n|------|-------|\n"
+        answer += f"| ML Status | {status_icon} **{status}** (conf {confidence:.0%}) |\n"
+        answer += f"| Overall Health | **{health['overall']:.0f}/100** |\n"
+        answer += f"| Detected Scenario | **{scenario_profile['name']}** (conf {scenario_conf:.0%}) |\n"
+        answer += f"| Recommended Decision | {decision} |\n\n"
+
+        # --- STAGE HEALTH ---
+        answer += "## Stage Health Scores\n\n"
+        answer += "| Stage | Score | Status |\n|-------|-------|--------|\n"
+        for stage, score in health["stages"].items():
+            icon = "✅" if score >= 90 else "⚠️" if score >= 70 else "🔴"
+            label = "Healthy" if score >= 90 else "Caution" if score >= 70 else "Critical"
+            answer += f"| {stage.replace('_', ' ').title()} | {score:.0f}/100 | {icon} {label} |\n"
+        answer += "\n"
+
+        # --- SCENARIO DIAGNOSIS ---
+        if scenario_key != "normal":
+            answer += f"## Failure Mode Diagnosis\n\n"
+            answer += f"**Scenario:** {scenario_profile['name']}\n\n"
+            answer += f"**Root Cause:** {scenario_profile['root_cause']}\n\n"
+            if scenario_profile.get("cascade_risks"):
+                answer += "**Cascade Risks:**\n"
+                for risk in scenario_profile["cascade_risks"]:
+                    answer += f"  - {risk}\n"
+                answer += "\n"
+
+        # --- CRITICAL PARAMETERS ---
+        if abnormal:
+            answer += "## Critical Parameters\n\n"
+            for param, info in abnormal[:5]:
+                arrow = "↑" if info["value"] > info["normal_max"] else "↓"
+                badge = "🔴" if info["severity"] == "SEVERE" else "🟡"
+                answer += (
+                    f"- {badge} **{param}** {arrow} `{info['value']:.2f} {info['unit']}` "
+                    f"*(normal: {info['normal_min']}–{info['normal_max']} {info['unit']})*\n"
+                )
+            answer += "\n"
+
+        # --- ML TOP FEATURES ---
+        if top_features:
+            answer += "## ML Decision Drivers\n\n"
+            for f in top_features[:3]:
+                answer += f"- **{f['feature']}**: {f['importance']:.1%} influence on classification\n"
+            answer += "\n"
+
+        # --- ACTION PLAN ---
+        answer += "## Action Plan\n\n"
+        if scenario_key != "normal":
+            if scenario_profile.get("immediate_actions"):
+                answer += "### ⚡ Do Now\n"
+                for i, action in enumerate(scenario_profile["immediate_actions"][:3], 1):
+                    answer += f"{i}. {action}\n"
+                answer += "\n"
+            if scenario_profile.get("corrective_actions"):
+                answer += "### 🔨 Root-Cause Fix\n"
+                for i, action in enumerate(scenario_profile["corrective_actions"][:3], 1):
+                    answer += f"{i}. {action}\n"
+                answer += "\n"
+            answer += f"### 📋 Quality/SPC Action\n{scenario_profile.get('spc_action', 'Monitor closely')}\n"
+        else:
+            answer += "✅ Process is healthy. Maintain normal monitoring cadence.\n"
+
+        # --- WATSONX.AI ENRICHMENT (optional) ---
+        wx_prompt = (
+            f"Semiconductor packaging process status:\n"
+            f"ML Status: {status} (confidence {confidence:.0%})\n"
+            f"Scenario: {scenario_profile['name']}\n"
+            f"Health: {health['overall']:.0f}/100\n"
+            f"Abnormal parameters: {[p for p, _ in abnormal[:3]]}\n"
+            f"Root cause: {scenario_profile['root_cause']}\n"
+            f"Provide a 2-sentence engineering recommendation for this situation.\n###"
+        )
+        wx_text = _watsonx_generate(wx_prompt, max_tokens=150)
+        if wx_text:
+            answer += f"\n### 🧠 IBM Granite Engineering Insight\n{wx_text}\n"
+
+        return {
+            "type": "decision",
+            "answer": answer,
+            "confidence": max(confidence, scenario_conf),
+            "health_scores": health,
+            "detected_scenario": scenario_key,
+            "abnormal_parameters": abnormal,
+            "top_features": top_features,
+            "decision": decision,
+            "actions": ["implement_decision"],
+        }
+
     def _handle_general_query(self, query: str, context: Optional[Dict]) -> Dict:
         health_snippet = ""
         if context and "current_data" in context:
@@ -494,6 +1007,7 @@ class CopilotService:
                 "I can assist you with:\n\n"
                 "| Query Type | Example |\n"
                 "|------------|----------|\n"
+                "| 🤖 Full Decision Report | 'Give me a full assessment' |\n"
                 "| 🔍 Root cause | 'Why is this batch severe?' |\n"
                 "| 📊 Stage analysis | 'Analyze wire bonding' |\n"
                 "| 💊 Health scores | 'Show process health' |\n"

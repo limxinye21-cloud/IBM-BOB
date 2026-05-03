@@ -13,6 +13,7 @@ class CopilotQuery(BaseModel):
     query: str = Field(..., description="User's natural language query")
     session_id: Optional[str] = Field(None, description="Session identifier for context")
     batch_id: Optional[str] = Field(None, description="Specific batch to analyze")
+    context: Optional[dict] = Field(None, description="Process context including current_data")
     
     class Config:
         json_schema_extra = {
