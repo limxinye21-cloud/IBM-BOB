@@ -11,8 +11,8 @@ This module defines realistic failure scenarios for testing and demonstration:
 from typing import Dict, List, Callable
 from dataclasses import dataclass
 
-from config_schema import ProcessStage, Status
-from generator import MockDataGenerator, ProcessData
+from data.mock.config_schema import ProcessStage, Status
+from data.mock.generator import MockDataGenerator, ProcessData
 
 
 @dataclass

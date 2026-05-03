@@ -60,7 +60,7 @@ class ModelInference:
         
         # Load model
         self.model = joblib.load(model_path)
-        print(f"✓ Model loaded from {model_path}")
+        print(f"[OK] Model loaded from {model_path}")
         
         # Load feature engineer
         fe_data = joblib.load(fe_path)
@@ -68,18 +68,18 @@ class ModelInference:
         self.feature_engineer = FeatureEngineer()
         self.feature_engineer.scaler = fe_data['scaler']
         self.feature_engineer.feature_names = fe_data['feature_names']
-        print(f"✓ Feature engineer loaded from {fe_path}")
+        print(f"[OK] Feature engineer loaded from {fe_path}")
         
         # Load metadata
-        with open(metadata_path, 'r') as f:
+        with open(metadata_path, 'r', encoding='utf-8') as f:
             self.metadata = json.load(f)
-        print(f"✓ Metadata loaded from {metadata_path}")
+        print(f"[OK] Metadata loaded from {metadata_path}")
         
         # Create label maps
         self.label_map = self.metadata['label_map']
         self.reverse_label_map = {v: k for k, v in self.label_map.items()}
         
-        print(f"\n✓ Model ready for inference")
+        print(f"\n[OK] Model ready for inference")
         print(f"  Model type: {self.metadata['model_type']}")
         print(f"  Training accuracy: {self.metadata['train_accuracy']:.4f}")
         print(f"  Test accuracy: {self.metadata['test_accuracy']:.4f}")
@@ -267,7 +267,7 @@ class ModelInference:
                         'parameter': name,
                         'value': float(value),
                         'importance': float(importance),
-                        'is_critical': importance >= threshold * 2
+                        'is_critical': bool(importance >= threshold * 2)
                     })
             
             # Sort by importance
