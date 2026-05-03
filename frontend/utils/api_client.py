@@ -11,7 +11,7 @@ import os
 # Timeout of 10 seconds balances responsiveness with network reliability.
 # Increase for slow networks or complex operations; decrease for faster failure detection.
 DEFAULT_API_TIMEOUT = 10
-DEFAULT_BASE_URL = "http://localhost:8000"
+DEFAULT_BASE_URL = "http://127.0.0.1:8001"
 
 
 class APIClient:
@@ -140,7 +140,7 @@ class APIClient:
         Returns:
             Ingestion result
         """
-        return self._post("/data/ingest", data)
+        return self._post("/ingest", data)
     
     def ingest_batch(self, data_list: List[Dict]) -> Dict:
         """
@@ -152,7 +152,7 @@ class APIClient:
         Returns:
             Ingestion result
         """
-        return self._post("/data/ingest/batch", data_list)
+        return self._post("/ingest/batch", data_list)
     
     def get_latest_data(self, limit: int = 1) -> Dict:
         """
@@ -164,7 +164,7 @@ class APIClient:
         Returns:
             Latest data
         """
-        return self._get("/data/latest", params={"limit": limit})
+        return self._get("/latest", params={"limit": limit})
     
     def get_batch_data(self, batch_id: str) -> Dict:
         """
@@ -176,7 +176,7 @@ class APIClient:
         Returns:
             Batch data
         """
-        return self._get(f"/data/batch/{batch_id}")
+        return self._get(f"/batch/{batch_id}")
     
     def get_historical_data(
         self,
@@ -185,22 +185,28 @@ class APIClient:
     ) -> Dict:
         """
         Get historical data
-        
+
         Args:
             hours: Number of hours to retrieve
             status_filter: Filter by status (GOOD/WARNING/SEVERE)
-            
+
         Returns:
-            Historical data
+            Historical data with 'success' and 'data' keys
         """
-        params = {"hours": hours}
+        from datetime import datetime, timedelta
+        start_time = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
+        body: Dict = {"start_time": start_time, "limit": 200, "offset": 0}
         if status_filter:
-            params["status"] = status_filter
-        return self._get("/data/historical", params)
+            body["status"] = status_filter
+        result = self._post("/historical", body)
+        # Normalise to {success, data, total}
+        if isinstance(result, dict) and "data" in result:
+            result["success"] = True
+        return result
     
     def get_data_stats(self) -> Dict:
         """Get data statistics"""
-        return self._get("/data/stats")
+        return self._get("/stats")
     
     # ===================================================================
     # ML Predictions
@@ -320,7 +326,7 @@ class APIClient:
 _api_client: Optional[APIClient] = None
 
 
-def get_api_client(base_url: str = "http://localhost:8000") -> APIClient:
+def get_api_client(base_url: str = DEFAULT_BASE_URL) -> APIClient:
     """
     Get or create API client singleton
     

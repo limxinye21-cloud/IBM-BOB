@@ -23,55 +23,59 @@ from backend.app.services.copilot_service import get_copilot_service
 router = APIRouter(prefix="/copilot", tags=["copilot"])
 
 
-@router.post("/query", response_model=CopilotResponse)
+@router.post("/query")
 async def process_copilot_query(
     query: CopilotQuery,
     db: Session = Depends(get_db)
 ):
     """
-    Process natural language query
-    
-    Args:
-        query: User query with optional context
-        db: Database session
-        
-    Returns:
-        Copilot response with answer and actions
+    Process natural language query using CopilotService
     """
     copilot = get_copilot_service()
     
     try:
-        # Simple response based on query
-        response_text = "I'm Bob, your AI packaging reliability assistant. I can help analyze process data and provide recommendations."
-        
-        if "severe" in query.query.lower() or "why" in query.query.lower():
-            response_text = "This batch may be showing issues due to parameters outside acceptable ranges. Check die void percentage, wire pull strength, and reliability scores."
-        elif "optimize" in query.query.lower():
-            response_text = "To optimize the process, consider adjusting temperature settings, bonding force, and curing parameters based on historical data."
-        elif "die attach" in query.query.lower():
-            response_text = "Die attach quality depends on temperature control, epoxy application, and void formation. Monitor void percentage and placement accuracy."
-        
-        # Store interaction in database
-        interaction = models.CopilotInteraction(
-            session_id=query.session_id,
-            user_query=query.query,
-            bob_response=response_text,
-            context=None,
-            response_time_ms=100,
-            timestamp=datetime.now()
-        )
-        db.add(interaction)
-        db.commit()
-        db.refresh(interaction)
-        
-        return CopilotResponse(
-            response=response_text,
-            context={'batch_id': query.batch_id} if query.batch_id else None,
-            confidence=0.85,
-            recommendations=["Monitor critical parameters", "Review process settings"],
-            response_time_ms=100
-        )
-        
+        import time
+        t0 = time.time()
+
+        # Build context from request
+        context = query.context or {}
+        if query.batch_id and "batch_id" not in context:
+            context["batch_id"] = query.batch_id
+
+        # Call the real AI service
+        result = copilot.process_query(query.query, context=context if context else None)
+
+        elapsed_ms = int((time.time() - t0) * 1000)
+
+        # Persist interaction
+        try:
+            interaction = models.CopilotInteraction(
+                session_id=query.session_id,
+                user_query=query.query,
+                bob_response=result.get("answer", ""),
+                context=None,
+                response_time_ms=elapsed_ms,
+                timestamp=datetime.now()
+            )
+            db.add(interaction)
+            db.commit()
+        except Exception:
+            db.rollback()
+
+        return {
+            "success": True,
+            "answer": result.get("answer", ""),
+            "query_type": result.get("type", "general"),
+            "confidence": result.get("confidence", 0.0),
+            "health_scores": result.get("health_scores"),
+            "detected_scenario": result.get("detected_scenario"),
+            "decision": result.get("decision"),
+            "abnormal_parameters": result.get("abnormal_parameters", []),
+            "recommendations": result.get("recommendations", []),
+            "actions": result.get("actions", []),
+            "response_time_ms": elapsed_ms,
+        }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Query processing failed: {str(e)}")
 

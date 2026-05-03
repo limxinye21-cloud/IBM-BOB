@@ -163,6 +163,9 @@ st.markdown("""
 # Initialize session state
 if 'api_client' not in st.session_state:
     st.session_state.api_client = get_api_client()
+elif not st.session_state.api_client.base_url.endswith('8001'):
+    # Update api_client if backend port changed
+    st.session_state.api_client = get_api_client()
 
 if 'mock_generator' not in st.session_state:
     st.session_state.mock_generator = MockDataGenerator()
@@ -175,6 +178,9 @@ if 'prediction_history' not in st.session_state:
 
 if 'auto_refresh' not in st.session_state:
     st.session_state.auto_refresh = False
+
+if 'active_scenario' not in st.session_state:
+    st.session_state.active_scenario = 'Normal'
 
 
 def main():
@@ -369,6 +375,12 @@ def generate_new_data(source: str, scenario: str = None):
         
         # Convert ProcessData object to dictionary
         st.session_state.current_data = data.to_dict()
+        st.session_state.active_scenario = scenario or 'Normal'
+        # Persist to backend DB for historical queries
+        try:
+            st.session_state.api_client.ingest_data(st.session_state.current_data)
+        except Exception:
+            pass
         st.success(f"✓ Generated data with scenario: {scenario}")
     
     elif source == "Manual Input":
@@ -692,20 +704,72 @@ def display_ml_analysis(data: dict):
 
 
 def display_historical_trends():
-    """Display historical trends"""
+    """Display historical trends with time series and parameter charts"""
     
+    api_client = st.session_state.api_client
+    
+    # ── Prediction timeline (from session state) ──────────────────────────
     st.markdown("#### 📈 Prediction Timeline")
     
     if st.session_state.prediction_history:
         render_status_timeline(st.session_state.prediction_history)
         
         st.markdown("---")
-        
-        # Confidence histogram
         st.markdown("#### 📊 Confidence Distribution")
         render_confidence_histogram(st.session_state.prediction_history)
     else:
-        st.info("No historical data available. Generate predictions to see trends.")
+        st.info("No prediction history yet. Click **📈 Get Prediction** to start tracking.")
+    
+    st.markdown("---")
+    
+    # ── Historical parameter trends (from backend) ─────────────────────────
+    st.markdown("#### 📉 Parameter Time Series")
+    
+    hours_col, param_col = st.columns([1, 3])
+    with hours_col:
+        hours = st.selectbox("Time window", [1, 6, 12, 24, 48], index=2, key="hist_hours")
+    with param_col:
+        param_options = [
+            "die_temperature", "die_void_percentage", "die_placement_accuracy",
+            "wire_bonding_force", "wire_pull_strength", "wire_loop_height",
+            "mold_temperature", "mold_pressure", "mold_voids",
+            "cure_temperature", "cure_uniformity",
+            "inspect_reliability_score", "inspect_defect_count",
+        ]
+        selected_params = st.multiselect(
+            "Parameters", param_options,
+            default=["die_temperature", "wire_pull_strength", "inspect_reliability_score"],
+            key="hist_params"
+        )
+    
+    try:
+        hist_result = api_client.get_historical_data(hours=hours)
+        if hist_result.get('success'):
+            records = hist_result.get('data', [])
+            if records:
+                df_hist = pd.DataFrame(records)
+                df_hist['timestamp'] = pd.to_datetime(df_hist['timestamp'])
+                df_hist = df_hist.sort_values('timestamp')
+                
+                if selected_params:
+                    if len(selected_params) == 1:
+                        render_time_series(
+                            df_hist, selected_params[0],
+                            title=f"{selected_params[0].replace('_',' ').title()} Trend"
+                        )
+                    else:
+                        render_multi_parameter_chart(
+                            df_hist, selected_params,
+                            title="Multi-Parameter Trend"
+                        )
+                else:
+                    st.info("Select at least one parameter above.")
+            else:
+                st.info(f"No data recorded in the last {hours} hours. Click **▶ Start** to generate data.")
+        else:
+            st.warning("Could not load historical data from backend.")
+    except Exception as e:
+        st.warning(f"Historical data unavailable: {e}")
 
 
 def display_manual_input():

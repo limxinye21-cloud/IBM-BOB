@@ -99,7 +99,97 @@ class AlertService:
                 'type': AlertType.PARAMETER_ABNORMAL,
                 'title': 'Temperature Out of Range',
                 'priority': 3
-            }
+            },
+            # ---------------------------------------------------------------- #
+            # Scenario-specific rules
+            # ---------------------------------------------------------------- #
+            'curing_incomplete': {
+                'condition': lambda data: (
+                    data.get('cure_time', 150) < 120 or
+                    data.get('cure_temperature', 181) < 178
+                ),
+                'severity': AlertSeverity.CRITICAL,
+                'type': AlertType.PROCESS_SEVERE,
+                'title': 'Incomplete Curing Detected',
+                'priority': 1
+            },
+            'cure_uniformity_poor': {
+                'condition': lambda data: data.get('cure_uniformity', 1.0) > 2.5,
+                'severity': AlertSeverity.WARNING,
+                'type': AlertType.PARAMETER_ABNORMAL,
+                'title': 'Poor Cure Temperature Uniformity',
+                'priority': 2
+            },
+            'molding_compound_viscosity': {
+                'condition': lambda data: (
+                    data.get('mold_compound_viscosity', 127) > 155 or
+                    data.get('mold_compound_viscosity', 127) < 80
+                ),
+                'severity': AlertSeverity.WARNING,
+                'type': AlertType.PARAMETER_ABNORMAL,
+                'title': 'Molding Compound Viscosity Out of Spec',
+                'priority': 2
+            },
+            'mold_void_warning': {
+                'condition': lambda data: data.get('mold_voids', 0) > 1.0,
+                'severity': AlertSeverity.WARNING,
+                'type': AlertType.PARAMETER_ABNORMAL,
+                'title': 'Elevated Mold Void Percentage',
+                'priority': 3
+            },
+            'mold_temperature_low': {
+                'condition': lambda data: data.get('mold_temperature', 176) < 165,
+                'severity': AlertSeverity.WARNING,
+                'type': AlertType.PARAMETER_ABNORMAL,
+                'title': 'Mold Temperature Below Minimum',
+                'priority': 3
+            },
+            'wire_ultrasonic_low': {
+                'condition': lambda data: data.get('wire_ultrasonic_power', 92) < 70,
+                'severity': AlertSeverity.WARNING,
+                'type': AlertType.EQUIPMENT_ISSUE,
+                'title': 'Wire Bonding Ultrasonic Power Low',
+                'priority': 2
+            },
+            'inspection_visual_fail': {
+                'condition': lambda data: data.get('inspect_visual_score', 95) < 85,
+                'severity': AlertSeverity.CRITICAL,
+                'type': AlertType.QUALITY_DEGRADATION,
+                'title': 'Visual Inspection Score Below Threshold',
+                'priority': 2
+            },
+            'dimensional_accuracy_severe': {
+                'condition': lambda data: data.get('inspect_dimensional_accuracy', 10) > 40,
+                'severity': AlertSeverity.CRITICAL,
+                'type': AlertType.QUALITY_DEGRADATION,
+                'title': 'Dimensional Accuracy Out of Spec',
+                'priority': 2
+            },
+            'lead_coplanarity_severe': {
+                'condition': lambda data: data.get('inspect_lead_coplanarity', 40) > 100,
+                'severity': AlertSeverity.CRITICAL,
+                'type': AlertType.QUALITY_DEGRADATION,
+                'title': 'Lead Coplanarity Critical Deviation',
+                'priority': 2
+            },
+            'die_placement_severe': {
+                'condition': lambda data: data.get('die_placement_accuracy', 5) > 15,
+                'severity': AlertSeverity.WARNING,
+                'type': AlertType.PARAMETER_ABNORMAL,
+                'title': 'Die Placement Accuracy Degraded',
+                'priority': 3
+            },
+            'cascading_multi_stage': {
+                'condition': lambda data: (
+                    data.get('die_void_percentage', 0) > 5 and
+                    data.get('wire_pull_strength', 10) < 6 and
+                    data.get('inspect_reliability_score', 100) < 85
+                ),
+                'severity': AlertSeverity.CRITICAL,
+                'type': AlertType.PROCESS_SEVERE,
+                'title': 'CRITICAL: Cascading Multi-Stage Failure',
+                'priority': 1
+            },
         }
     
     def check_alerts(self, process_data: Dict) -> List[Dict]:

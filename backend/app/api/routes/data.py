@@ -4,7 +4,7 @@ Data ingestion API routes
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 
 from backend.app.db import get_db, ProcessData
@@ -203,6 +203,33 @@ async def delete_batch_data(
     db.commit()
     
     return None
+
+
+@router.get("/recent")
+async def get_historical_data_get(
+    hours: int = 24,
+    limit: int = 200,
+    status_filter: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    GET endpoint for recent historical data (supports query params).
+    Returns up to `limit` records from the last `hours` hours.
+    """
+    from datetime import timedelta
+    cutoff = datetime.utcnow() - timedelta(hours=hours)
+    q = db.query(ProcessData).filter(ProcessData.timestamp >= cutoff)
+    if status_filter:
+        q = q.filter(ProcessData.status == status_filter)
+    records = q.order_by(ProcessData.timestamp.asc()).limit(limit).all()
+    return {
+        "success": True,
+        "total": len(records),
+        "data": [
+            {c.name: getattr(r, c.name) for c in r.__table__.columns}
+            for r in records
+        ]
+    }
 
 
 @router.get("/stats")
