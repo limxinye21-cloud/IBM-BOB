@@ -7,13 +7,22 @@ from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
+import re
+import logging
 
 from backend.app.db.database import get_db
 from backend.app.db import models
 from backend.app.schemas.data_schema import ProcessDataCreate
 from backend.app.services.alert_service import get_alert_service
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/alerts", tags=["alerts"])
+
+# Alert threshold constants
+DIE_VOID_PERCENTAGE_THRESHOLD = 5.0
+MIN_WIRE_PULL_STRENGTH = 6.0
+MIN_RELIABILITY_SCORE = 85.0
 
 
 @router.post("/check")
@@ -42,8 +51,16 @@ async def check_alerts(
         # Simple alert checking
         alerts = []
         
+        # Validate batch_id to prevent SQL injection
+        if not data.batch_id:
+            raise HTTPException(status_code=400, detail="batch_id is required")
+        if not isinstance(data.batch_id, str):
+            raise HTTPException(status_code=400, detail="batch_id must be a string")
+        if not re.match(r'^[a-zA-Z0-9_-]+$', data.batch_id):
+            raise HTTPException(status_code=400, detail="batch_id contains invalid characters. Only alphanumeric, hyphens, and underscores allowed")
+        
         # Check die attach
-        if process_data.get('die_void_percentage', 0) > 5:
+        if process_data.get('die_void_percentage', 0) > DIE_VOID_PERCENTAGE_THRESHOLD:
             alerts.append({
                 'severity': 'SEVERE',
                 'stage': 'die_attach',
@@ -53,7 +70,7 @@ async def check_alerts(
             })
         
         # Check wire bonding
-        if process_data.get('wire_pull_strength', 10) < 6:
+        if process_data.get('wire_pull_strength', 10) < MIN_WIRE_PULL_STRENGTH:
             alerts.append({
                 'severity': 'SEVERE',
                 'stage': 'wire_bonding',
@@ -63,7 +80,7 @@ async def check_alerts(
             })
         
         # Check inspection
-        if process_data.get('inspect_reliability_score', 95) < 85:
+        if process_data.get('inspect_reliability_score', 95) < MIN_RELIABILITY_SCORE:
             alerts.append({
                 'severity': 'WARNING',
                 'stage': 'inspection',
@@ -72,8 +89,9 @@ async def check_alerts(
                 'value': process_data['inspect_reliability_score']
             })
         
-        # Store alerts in database
+        # Store alerts in database using bulk insert for better performance
         if alerts:
+            db_alerts = []
             for alert in alerts:
                 db_alert = models.AlertHistory(
                     batch_id=data.batch_id,
@@ -85,8 +103,9 @@ async def check_alerts(
                     recommendations="Check equipment calibration and process parameters",
                     resolved=False
                 )
-                db.add(db_alert)
+                db_alerts.append(db_alert)
             
+            db.add_all(db_alerts)
             db.commit()
         
         return {
@@ -95,8 +114,12 @@ async def check_alerts(
             'alerts': alerts
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Alert check failed: {str(e)}")
+        logger.exception("Alert check failed")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Alert check failed due to internal error")
 
 
 @router.get("/active")

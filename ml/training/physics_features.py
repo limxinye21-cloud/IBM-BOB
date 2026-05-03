@@ -14,6 +14,53 @@ from typing import Dict, List
 import pandas as pd
 
 
+# Unit conversion constants
+PA_TO_MPA = 1e-6  # Pascal to MegaPascal
+GF_TO_N = 9.81e-3  # Gram-force to Newton
+UM_TO_M = 1e-6  # Micrometer to Meter
+MM_TO_M = 1e-3  # Millimeter to Meter
+
+# Physical constants
+BOLTZMANN_CONSTANT = 1.381e-23  # J/K - Boltzmann constant
+GAS_CONSTANT = 8.314  # J/(mol·K) - Universal gas constant
+ELECTRON_VOLT_TO_JOULE = 1.602e-19  # eV to J conversion
+
+# Material property constants (typical values for semiconductor packaging)
+# Silicon properties
+SILICON_CTE = 2.6e-6  # 1/K - Coefficient of Thermal Expansion
+SILICON_YOUNGS_MODULUS = 130e9  # Pa - Young's modulus
+SILICON_POISSON_RATIO = 0.28  # Dimensionless
+SILICON_THERMAL_CONDUCTIVITY = 150  # W/m·K
+
+# Epoxy mold compound properties
+EPOXY_CTE_BELOW_TG = 15e-6  # 1/K - CTE below glass transition
+EPOXY_CTE_ABOVE_TG = 60e-6  # 1/K - CTE above glass transition
+EPOXY_YOUNGS_MODULUS = 20e9  # Pa
+EPOXY_POISSON_RATIO = 0.35
+EPOXY_TG = 175  # °C - Glass transition temperature
+
+# Wire bonding material properties
+GOLD_WIRE_CTE = 14.2e-6  # 1/K
+GOLD_WIRE_YOUNGS_MODULUS = 78e9  # Pa
+GOLD_WIRE_YIELD_STRENGTH = 200e6  # Pa
+ALUMINUM_WIRE_CTE = 23.1e-6  # 1/K
+ALUMINUM_WIRE_YOUNGS_MODULUS = 70e9  # Pa
+ALUMINUM_WIRE_YIELD_STRENGTH = 100e6  # Pa
+
+# Copper properties (for leadframe/substrate)
+COPPER_CTE = 17e-6  # 1/K
+COPPER_YOUNGS_MODULUS = 120e9  # Pa
+COPPER_POISSON_RATIO = 0.34
+
+# Intermetallic compound (IMC) properties
+IMC_ACTIVATION_ENERGY_EV = 1.0  # eV - Typical for Au-Al IMC formation
+IMC_ACTIVATION_ENERGY = IMC_ACTIVATION_ENERGY_EV * ELECTRON_VOLT_TO_JOULE  # J
+
+# Moisture properties
+WATER_HEAT_OF_VAPORIZATION = 40.66e3  # J/mol
+REFLOW_TEMPERATURE = 260  # °C - Typical lead-free solder reflow temperature
+
+
 class PhysicsFeatureCalculator:
     """
     Calculate physics-based features from process data
@@ -59,34 +106,37 @@ class PhysicsFeatureCalculator:
         """
         Calculate thermal stress from CTE mismatch
         
-        Stress = E * α * ΔT / (1 - ν)
+        Physics Formula: σ = E * α * ΔT / (1 - ν)
         where:
-        E = Young's modulus
-        α = CTE difference
-        ΔT = Temperature change
-        ν = Poisson's ratio
+        σ = Thermal stress (Pa)
+        E = Effective Young's modulus (Pa) - harmonic mean of material moduli
+        α = CTE difference (1/K) - mismatch between materials
+        ΔT = Temperature change (K) - from reference to process temperature
+        ν = Poisson's ratio (dimensionless) - material property
+        
+        This stress arises from differential thermal expansion between materials
+        with different CTEs (e.g., silicon die vs. epoxy mold compound).
         """
         features = {}
         
-        # Die attach thermal stress (Si vs Epoxy)
+        # Die attach thermal stress (Silicon vs Epoxy interface)
         die_temp = data.get('die_attach_temperature', 185)
-        delta_T = die_temp - self.reference_temp
+        delta_T = die_temp - self.reference_temp  # Temperature rise from ambient
         
-        alpha_diff = abs(
-            self.MATERIAL_PROPERTIES['epoxy_mold']['CTE'] - 
-            self.MATERIAL_PROPERTIES['silicon']['CTE']
-        )
+        # CTE mismatch: Epoxy expands ~6x more than silicon
+        alpha_diff = abs(EPOXY_CTE_BELOW_TG - SILICON_CTE)
         
+        # Effective modulus: Harmonic mean for bi-material interface
+        # Formula: E_eff = (E1 * E2) / (E1 + E2)
         E_eff = (
-            self.MATERIAL_PROPERTIES['silicon']['youngs_modulus'] * 
-            self.MATERIAL_PROPERTIES['epoxy_mold']['youngs_modulus']
+            SILICON_YOUNGS_MODULUS * EPOXY_YOUNGS_MODULUS
         ) / (
-            self.MATERIAL_PROPERTIES['silicon']['youngs_modulus'] + 
-            self.MATERIAL_PROPERTIES['epoxy_mold']['youngs_modulus']
+            SILICON_YOUNGS_MODULUS + EPOXY_YOUNGS_MODULUS
         )
         
+        # Calculate thermal stress using plane stress approximation
         thermal_stress = E_eff * alpha_diff * delta_T / (1 - 0.3)
-        features['die_attach_thermal_stress'] = thermal_stress / 1e6  # Convert to MPa
+        features['die_attach_thermal_stress'] = thermal_stress * PA_TO_MPA  # Convert to MPa
         
         # Molding thermal stress
         mold_temp = data.get('mold_temperature', 175)
@@ -158,26 +208,34 @@ class PhysicsFeatureCalculator:
         """
         Calculate intermetallic compound (IMC) growth at wire bonds
         
-        IMC thickness ∝ sqrt(D * t) * exp(-Ea/RT)
-        where D = diffusion coefficient, t = time, Ea = activation energy
+        Physics Formula: x = sqrt(D₀ * t) * exp(-Ea / kT)
+        where:
+        x = IMC thickness (nm)
+        D₀ = Pre-exponential diffusion coefficient (m²/s)
+        t = Time at temperature (s)
+        Ea = Activation energy for diffusion (J) - typically 1.0 eV for Au-Al
+        k = Boltzmann constant (1.381×10⁻²³ J/K)
+        T = Absolute temperature (K)
+        
+        IMC formation is critical for wire bond reliability. Excessive growth
+        leads to brittle bonds (Kirkendall voids), while insufficient growth
+        results in weak bonds. Optimal thickness is 1-3 μm.
         """
         features = {}
         
-        # Simplified Arrhenius model
+        # Wire bonding conditions
         bond_temp = data.get('bonding_temperature', 165)  # °C
         bond_time = data.get('bond_time', 20)  # ms
         
-        # Convert to Kelvin
+        # Convert to Kelvin for Arrhenius equation
         T_kelvin = bond_temp + 273.15
         
-        # Activation energy for Au-Al IMC (typical: 1.0 eV)
-        Ea = 1.0 * 1.602e-19  # J
-        k_B = 1.381e-23  # Boltzmann constant
+        # Arrhenius growth rate factor: exp(-Ea / kT)
+        # Higher temperature → faster IMC growth (exponential relationship)
+        growth_factor = np.exp(-IMC_ACTIVATION_ENERGY / (BOLTZMANN_CONSTANT * T_kelvin))
         
-        # Growth rate factor
-        growth_factor = np.exp(-Ea / (k_B * T_kelvin))
-        
-        # IMC thickness index (arbitrary units)
+        # IMC thickness follows parabolic growth law: x ∝ sqrt(t)
+        # This is characteristic of diffusion-controlled processes
         imc_index = growth_factor * np.sqrt(bond_time)
         features['intermetallic_growth_index'] = imc_index * 1e10  # Scale for readability
         
@@ -191,23 +249,33 @@ class PhysicsFeatureCalculator:
         """
         Calculate moisture-induced stress (popcorn effect)
         
-        Vapor pressure ∝ exp(moisture_content) * exp(-Hv/RT)
+        Physics Formula: P = P₀ * RH * exp(-ΔHv / RT)
+        where:
+        P = Vapor pressure (Pa)
+        P₀ = Saturation vapor pressure at temperature T
+        RH = Relative humidity (0-1)
+        ΔHv = Heat of vaporization for water (40.66 kJ/mol)
+        R = Gas constant (8.314 J/(mol·K))
+        T = Absolute temperature (K)
+        
+        The "popcorn effect" occurs when absorbed moisture vaporizes during
+        reflow soldering (260°C), creating internal pressure that can crack
+        the package. This is especially critical for packages with voids.
         """
         features = {}
         
-        # Humidity during cure
+        # Humidity during cure affects moisture absorption
         humidity = data.get('cure_humidity', 40)  # %RH
         
-        # Reflow temperature (worst case for popcorn)
-        reflow_temp = 260  # °C (typical lead-free solder reflow)
-        T_kelvin = reflow_temp + 273.15
+        # Reflow temperature (worst case for popcorn effect)
+        # Lead-free solder reflow: 260°C peak temperature
+        T_kelvin = REFLOW_TEMPERATURE + 273.15
         
-        # Heat of vaporization for water
-        Hv = 40.66e3  # J/mol
-        R = 8.314  # J/(mol·K)
-        
-        # Vapor pressure index
-        vapor_pressure_index = (humidity / 100) * np.exp(-Hv / (R * T_kelvin))
+        # Clausius-Clapeyron equation for vapor pressure
+        # exp(-ΔHv/RT) gives temperature dependence of vapor pressure
+        vapor_pressure_index = (humidity / 100) * np.exp(
+            -WATER_HEAT_OF_VAPORIZATION / (GAS_CONSTANT * T_kelvin)
+        )
         features['moisture_vapor_pressure_index'] = vapor_pressure_index * 1e6
         
         # Void percentage amplifies moisture risk

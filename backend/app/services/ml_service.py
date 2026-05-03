@@ -14,6 +14,19 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
 from ml.training.inference import ModelInference
 
 
+# Threshold constants for rule-based classification
+THRESHOLDS = {
+    'die_void_percentage': {'severe': 5, 'warning': 3},
+    'die_temperature': {'min': 175, 'max': 195},
+    'wire_pull_strength': {'severe': 6, 'warning': 8},
+    'wire_bonding_force': {'min': 35, 'max': 55},
+    'mold_voids': {'severe': 2, 'warning': 1},
+    'cure_uniformity': {'warning': 2.5},
+    'inspect_reliability_score': {'severe': 85, 'warning': 90},
+    'inspect_defect_count': {'severe': 2, 'warning': 0}
+}
+
+
 class MLService:
     """
     Service layer for ML model integration
@@ -183,6 +196,48 @@ class MLService:
                 'message': str(e)
             }
     
+    def _check_parameter_threshold(
+        self,
+        param_name: str,
+        value: float,
+        thresholds: Dict,
+        default_value: float = 0
+    ) -> str:
+        """
+        Check if a parameter exceeds thresholds
+        
+        Args:
+            param_name: Parameter name
+            value: Parameter value
+            thresholds: Threshold configuration
+            default_value: Default value if parameter not found
+            
+        Returns:
+            'severe', 'warning', or 'good'
+        """
+        if 'severe' in thresholds and 'warning' in thresholds:
+            # Higher is worse
+            if value > thresholds['severe']:
+                return 'severe'
+            elif value > thresholds['warning']:
+                return 'warning'
+        elif 'severe' in thresholds:
+            # Lower is worse (e.g., pull strength)
+            if value < thresholds['severe']:
+                return 'severe'
+            elif 'warning' in thresholds and value < thresholds['warning']:
+                return 'warning'
+        elif 'min' in thresholds and 'max' in thresholds:
+            # Range check
+            if value < thresholds['min'] or value > thresholds['max']:
+                return 'warning'
+        elif 'warning' in thresholds:
+            # Single threshold
+            if value > thresholds['warning']:
+                return 'warning'
+        
+        return 'good'
+    
     def _rule_based_classification(self, process_data: Dict) -> Dict:
         """
         Fallback rule-based classification when ML model is unavailable
@@ -198,45 +253,85 @@ class MLService:
         warning_count = 0
         
         # Die attach checks
-        if process_data.get('die_void_percentage', 0) > 5:
+        result = self._check_parameter_threshold(
+            'die_void_percentage',
+            process_data.get('die_void_percentage', 0),
+            THRESHOLDS['die_void_percentage']
+        )
+        if result == 'severe':
             severe_count += 1
-        elif process_data.get('die_void_percentage', 0) > 3:
+        elif result == 'warning':
             warning_count += 1
         
-        if process_data.get('die_temperature', 185) > 195 or process_data.get('die_temperature', 185) < 175:
+        result = self._check_parameter_threshold(
+            'die_temperature',
+            process_data.get('die_temperature', 185),
+            THRESHOLDS['die_temperature']
+        )
+        if result == 'warning':
             warning_count += 1
         
         # Wire bonding checks
-        if process_data.get('wire_pull_strength', 10) < 6:
+        result = self._check_parameter_threshold(
+            'wire_pull_strength',
+            process_data.get('wire_pull_strength', 10),
+            THRESHOLDS['wire_pull_strength']
+        )
+        if result == 'severe':
             severe_count += 1
-        elif process_data.get('wire_pull_strength', 10) < 8:
+        elif result == 'warning':
             warning_count += 1
         
-        if process_data.get('wire_bonding_force', 45) < 35 or process_data.get('wire_bonding_force', 45) > 55:
+        result = self._check_parameter_threshold(
+            'wire_bonding_force',
+            process_data.get('wire_bonding_force', 45),
+            THRESHOLDS['wire_bonding_force']
+        )
+        if result == 'warning':
             warning_count += 1
         
         # Molding checks
-        if process_data.get('mold_voids', 0.5) > 2:
+        result = self._check_parameter_threshold(
+            'mold_voids',
+            process_data.get('mold_voids', 0.5),
+            THRESHOLDS['mold_voids']
+        )
+        if result == 'severe':
             severe_count += 1
-        elif process_data.get('mold_voids', 0.5) > 1:
+        elif result == 'warning':
             warning_count += 1
         
         # Curing checks
-        if process_data.get('cure_uniformity', 1.5) > 2.5:
+        result = self._check_parameter_threshold(
+            'cure_uniformity',
+            process_data.get('cure_uniformity', 1.5),
+            THRESHOLDS['cure_uniformity']
+        )
+        if result == 'warning':
             warning_count += 1
         
         # Inspection checks
         if process_data.get('inspect_electrical_test', 1) == 0:
             severe_count += 1
         
-        if process_data.get('inspect_reliability_score', 95) < 85:
+        result = self._check_parameter_threshold(
+            'inspect_reliability_score',
+            process_data.get('inspect_reliability_score', 95),
+            THRESHOLDS['inspect_reliability_score']
+        )
+        if result == 'severe':
             severe_count += 1
-        elif process_data.get('inspect_reliability_score', 95) < 90:
+        elif result == 'warning':
             warning_count += 1
         
-        if process_data.get('inspect_defect_count', 0) > 2:
+        result = self._check_parameter_threshold(
+            'inspect_defect_count',
+            process_data.get('inspect_defect_count', 0),
+            THRESHOLDS['inspect_defect_count']
+        )
+        if result == 'severe':
             severe_count += 1
-        elif process_data.get('inspect_defect_count', 0) > 0:
+        elif result == 'warning':
             warning_count += 1
         
         # Determine status

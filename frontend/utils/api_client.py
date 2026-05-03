@@ -5,6 +5,13 @@ API Client for AI Packaging Reliability Copilot Dashboard
 import requests
 from typing import Dict, List, Optional
 import streamlit as st
+import os
+
+# Configuration constants
+# Timeout of 10 seconds balances responsiveness with network reliability.
+# Increase for slow networks or complex operations; decrease for faster failure detection.
+DEFAULT_API_TIMEOUT = 10
+DEFAULT_BASE_URL = "http://localhost:8000"
 
 
 class APIClient:
@@ -12,15 +19,40 @@ class APIClient:
     Client for interacting with backend API
     """
     
-    def __init__(self, base_url: str = "http://localhost:8000"):
+    def __init__(self, base_url: Optional[str] = None):
         """
         Initialize API client
         
         Args:
-            base_url: Base URL of the backend API
+            base_url: Base URL of the backend API (defaults to env var or localhost)
         """
-        self.base_url = base_url
+        self.base_url = base_url or os.getenv('API_BASE_URL', DEFAULT_BASE_URL)
         self.api_prefix = "/api/v1"
+        self.timeout = int(os.getenv('API_TIMEOUT', str(DEFAULT_API_TIMEOUT)))
+    
+    def _handle_request_errors(self, e: Exception) -> Dict:
+        """
+        Handle common request errors with consistent error messages
+        
+        Args:
+            e: Exception that occurred
+            
+        Returns:
+            Error response dictionary
+        """
+        if isinstance(e, requests.exceptions.Timeout):
+            st.error(f"API Timeout: {e}")
+            return {"success": False, "error": f"Request timeout after {self.timeout}s"}
+        elif isinstance(e, requests.exceptions.ConnectionError):
+            st.error(f"API Connection Error: {e}")
+            return {"success": False, "error": "Cannot connect to API server"}
+        elif isinstance(e, requests.exceptions.HTTPError):
+            error_detail = f"HTTP {e.response.status_code}: {e.response.text if hasattr(e.response, 'text') else str(e)}"
+            st.error(f"API Error: {error_detail}")
+            return {"success": False, "error": error_detail}
+        else:
+            st.error(f"API Error: {e}")
+            return {"success": False, "error": str(e)}
         
     def _get(self, endpoint: str, params: Optional[Dict] = None) -> Dict:
         """
@@ -35,12 +67,11 @@ class APIClient:
         """
         url = f"{self.base_url}{self.api_prefix}{endpoint}"
         try:
-            response = requests.get(url, params=params, timeout=10)
+            response = requests.get(url, params=params, timeout=self.timeout)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            st.error(f"API Error: {e}")
-            return {"success": False, "error": str(e)}
+            return self._handle_request_errors(e)
     
     def _post(self, endpoint: str, data: Dict) -> Dict:
         """
@@ -55,16 +86,11 @@ class APIClient:
         """
         url = f"{self.base_url}{self.api_prefix}{endpoint}"
         try:
-            response = requests.post(url, json=data, timeout=10)
+            response = requests.post(url, json=data, timeout=self.timeout)
             response.raise_for_status()
             return response.json()
-        except requests.exceptions.HTTPError as e:
-            error_detail = f"HTTP {e.response.status_code}: {e.response.text if hasattr(e.response, 'text') else str(e)}"
-            st.error(f"API Error: {error_detail}")
-            return {"success": False, "error": error_detail}
         except requests.exceptions.RequestException as e:
-            st.error(f"API Error: {e}")
-            return {"success": False, "error": str(e)}
+            return self._handle_request_errors(e)
     
     def _delete(self, endpoint: str) -> Dict:
         """
@@ -78,12 +104,11 @@ class APIClient:
         """
         url = f"{self.base_url}{self.api_prefix}{endpoint}"
         try:
-            response = requests.delete(url, timeout=10)
+            response = requests.delete(url, timeout=self.timeout)
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            st.error(f"API Error: {e}")
-            return {"success": False, "error": str(e)}
+            return self._handle_request_errors(e)
     
     # ===================================================================
     # Health & Status
@@ -92,9 +117,9 @@ class APIClient:
     def health_check(self) -> Dict:
         """Check API health"""
         try:
-            response = requests.get(f"{self.base_url}/health", timeout=5)
+            response = requests.get(f"{self.base_url}/health", timeout=self.timeout)
             return response.json()
-        except:
+        except requests.exceptions.RequestException:
             return {"status": "unhealthy"}
     
     def get_ml_status(self) -> Dict:
@@ -287,7 +312,7 @@ class APIClient:
         try:
             response = requests.get(self.base_url, timeout=5)
             return response.json()
-        except:
+        except requests.exceptions.RequestException:
             return {"message": "API not available"}
 
 
