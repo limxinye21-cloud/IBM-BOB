@@ -11,65 +11,110 @@ from datetime import datetime
 def render_chat_interface(api_client, current_data: Optional[Dict] = None):
     """
     Render chat interface for copilot interaction
-    
-    Args:
-        api_client: API client instance
-        current_data: Current process data for context
     """
-    st.markdown("### 💬 Chat with AI Copilot")
-    st.markdown("Ask me anything about the packaging process, current status, or how to optimize parameters.")
-    
-    # Initialize chat history in session state
+    # Inject chat-specific styles
+    st.markdown("""
+    <style>
+    .chat-wrap  { max-height:480px; overflow-y:auto; padding:4px 0; }
+    .msg-user   { display:flex; justify-content:flex-end; margin:8px 0; }
+    .msg-bot    { display:flex; justify-content:flex-start; margin:8px 0; }
+    .bubble-user{
+        background:linear-gradient(135deg,#0f62fe,#0043ce);
+        color:white; padding:12px 16px; border-radius:18px 18px 4px 18px;
+        max-width:72%; font-size:14px; line-height:1.5;
+        box-shadow:0 2px 8px rgba(15,98,254,.25);
+    }
+    .bubble-bot {
+        background:white;
+        color:#1a2238; padding:12px 16px; border-radius:18px 18px 18px 4px;
+        max-width:75%; font-size:13.5px; line-height:1.6;
+        border-left:3px solid #0f62fe;
+        box-shadow:0 2px 10px rgba(15,98,254,.12);
+    }
+    .bot-header { font-weight:700; color:#0043ce; margin-bottom:6px; font-size:13px; }
+    .badge      { display:inline-block; padding:2px 8px; border-radius:10px;
+                  font-size:11px; font-weight:600; margin-left:6px; }
+    .badge-conf { background:#ddeeff; color:#0043ce; }
+    .badge-type { background:#eef2ff; color:#697077; }
+    .ts         { font-size:10px; opacity:.45; margin-top:5px; }
+    .chip-row   { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0; }
+    .chip {
+        background:#e8f0ff; color:#0043ce; border:1px solid #0f62fe33;
+        padding:5px 12px; border-radius:20px; font-size:12px; cursor:pointer;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("### 💬 AI Copilot Chat")
+    st.caption("Ask about process status, root causes, recommendations, or forecasts.")
+
     if 'chat_history' not in st.session_state:
         st.session_state.chat_history = []
-    
-    # Chat container
-    chat_container = st.container()
-    
-    # Display chat history
-    with chat_container:
-        if not st.session_state.chat_history:
-            st.info("👋 Hi! I'm your AI packaging reliability copilot. How can I help you today?")
-            
-            # Show example queries
-            st.markdown("**Try asking:**")
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("🔍 Why is this batch severe?"):
-                    process_query("Why is this batch severe?", api_client, current_data)
-                if st.button("📊 Analyze wire bonding"):
-                    process_query("Analyze wire bonding", api_client, current_data)
-            with col2:
-                if st.button("💡 How can I optimize?"):
-                    process_query("How can I optimize this process?", api_client, current_data)
-                if st.button("❓ Explain die attach"):
-                    process_query("Explain die attach stage", api_client, current_data)
-        else:
-            # Display chat messages
-            for message in st.session_state.chat_history:
-                render_chat_message(message)
-    
-    # Input area
+
+    # --- Suggested quick queries (only when no history) ---
+    if not st.session_state.chat_history:
+        st.markdown("""
+        <div class="chip-row">
+            <span class="chip">🔍 Why is this severe?</span>
+            <span class="chip">📈 Show process health</span>
+            <span class="chip">🔮 Forecast next 5 cycles</span>
+            <span class="chip">💡 Optimize parameters</span>
+        </div>
+        """, unsafe_allow_html=True)
+        col_q1, col_q2 = st.columns(2)
+        with col_q1:
+            if st.button("🔍 Why is this batch severe?", use_container_width=True):
+                process_query("Why is this batch severe?", api_client, current_data)
+            if st.button("📊 Show process health", use_container_width=True):
+                process_query("Show process health", api_client, current_data)
+        with col_q2:
+            if st.button("🔮 Forecast next 5 cycles", use_container_width=True):
+                process_query("Forecast next 5 cycles", api_client, current_data)
+            if st.button("💡 Optimize parameters", use_container_width=True):
+                process_query("How can I optimize this process?", api_client, current_data)
+    else:
+        # Chat history
+        for message in st.session_state.chat_history:
+            render_chat_message(message)
+
+        # Suggested follow-ups after last bot message
+        last_bot = next((m for m in reversed(st.session_state.chat_history) if m.get('role') == 'assistant'), None)
+        if last_bot:
+            qtype = last_bot.get('query_type', '')
+            follow_ups = {
+                'why':            ["Show recommendations", "Forecast next 5 cycles", "Analyze all stages"],
+                'health':         ["Why is the score low?", "Forecast next 5 cycles", "Show recommendations"],
+                'forecast':       ["What are root causes?", "How to optimize?", "Analyze wire bonding"],
+                'recommendation': ["Why these recommendations?", "Show process health", "Forecast"],
+            }.get(qtype, ["Show process health", "Why is this severe?", "Suggest optimization"])
+
+            st.markdown('<div class="chip-row">' +
+                        ''.join(f'<span class="chip">{q}</span>' for q in follow_ups[:3]) +
+                        '</div>', unsafe_allow_html=True)
+            f_cols = st.columns(len(follow_ups[:3]))
+            for i, fq in enumerate(follow_ups[:3]):
+                with f_cols[i]:
+                    if st.button(fq, key=f"fup_{i}", use_container_width=True):
+                        process_query(fq, api_client, current_data)
+                        st.rerun()
+
+    # Input row
     st.markdown("---")
     col1, col2 = st.columns([5, 1])
-    
     with col1:
         user_input = st.text_input(
             "Your question:",
             key="chat_input",
-            placeholder="Type your question here...",
+            placeholder="Ask about process health, root causes, forecasts...",
             label_visibility="collapsed"
         )
-    
     with col2:
-        send_button = st.button("Send", use_container_width=True)
-    
-    # Process input
+        send_button = st.button("➤ Send", use_container_width=True)
+
     if send_button and user_input:
         process_query(user_input, api_client, current_data)
         st.rerun()
-    
-    # Clear chat button
+
     if st.session_state.chat_history:
         if st.button("🗑️ Clear Chat"):
             st.session_state.chat_history = []
@@ -90,93 +135,29 @@ def render_chat_message(message: Dict):
     query_type = message.get('query_type')
     
     if role == 'user':
-        # User message (right-aligned, blue)
         st.markdown(
-            f"""
-            <div style="
-                display: flex;
-                justify-content: flex-end;
-                margin: 10px 0;
-            ">
-                <div style="
-                    background-color: #1f77b4;
-                    color: white;
-                    padding: 12px 16px;
-                    border-radius: 18px;
-                    max-width: 70%;
-                    word-wrap: break-word;
-                ">
-                    <div style="font-size: 14px;">{content}</div>
-                    <div style="font-size: 10px; opacity: 0.8; margin-top: 5px;">
-                        {timestamp}
-                    </div>
-                </div>
-            </div>
-            """,
+            f'<div class="msg-user">'
+            f'<div class="bubble-user">'
+            f'{content}'
+            f'<div class="ts">{timestamp}</div>'
+            f'</div></div>',
             unsafe_allow_html=True
         )
     else:
-        # Assistant message (left-aligned, gray)
         confidence_badge = ""
         if confidence is not None:
-            confidence_pct = confidence * 100
-            color = "#28a745" if confidence > 0.8 else "#ffc107" if confidence > 0.6 else "#dc3545"
-            confidence_badge = f"""
-                <span style="
-                    background-color: {color};
-                    color: white;
-                    padding: 2px 8px;
-                    border-radius: 10px;
-                    font-size: 10px;
-                    margin-left: 10px;
-                ">
-                    {confidence_pct:.0f}% confident
-                </span>
-            """
-        
-        type_badge = ""
-        if query_type:
-            type_badge = f"""
-                <span style="
-                    background-color: #6c757d;
-                    color: white;
-                    padding: 2px 8px;
-                    border-radius: 10px;
-                    font-size: 10px;
-                    margin-left: 5px;
-                ">
-                    {query_type}
-                </span>
-            """
-        
+            conf_pct = confidence * 100
+            badge_cls = 'badge-conf'
+            confidence_badge = f'<span class="badge {badge_cls}">{conf_pct:.0f}% confident</span>'
+        type_badge = f'<span class="badge badge-type">{query_type}</span>' if query_type else ""
+
         st.markdown(
-            f"""
-            <div style="
-                display: flex;
-                justify-content: flex-start;
-                margin: 10px 0;
-            ">
-                <div style="
-                    background-color: #f1f3f4;
-                    color: #202124;
-                    padding: 12px 16px;
-                    border-radius: 18px;
-                    max-width: 70%;
-                    word-wrap: break-word;
-                    border-left: 4px solid #1f77b4;
-                ">
-                    <div style="font-weight: bold; margin-bottom: 5px; color: #1f77b4;">
-                        🤖 AI Copilot {confidence_badge} {type_badge}
-                    </div>
-                    <div style="font-size: 14px; line-height: 1.5;">
-                        {content}
-                    </div>
-                    <div style="font-size: 10px; color: #666; margin-top: 5px;">
-                        {timestamp}
-                    </div>
-                </div>
-            </div>
-            """,
+            f'<div class="msg-bot">'
+            f'<div class="bubble-bot">'
+            f'<div class="bot-header">🤖 IBM BOB {confidence_badge} {type_badge}</div>'
+            f'<div>{content}</div>'
+            f'<div class="ts">{timestamp}</div>'
+            f'</div></div>',
             unsafe_allow_html=True
         )
 

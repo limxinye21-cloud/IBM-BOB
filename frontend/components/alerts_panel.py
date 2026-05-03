@@ -25,7 +25,14 @@ def render_alerts_panel(api_client):
             alerts = result.get('alerts', [])
             
             if not alerts:
-                st.success("✓ No active alerts - All systems operating normally")
+                st.markdown("""
+                <div style="background:linear-gradient(135deg,#e8f5e9,#f0fdf4);border:1px solid #198038;
+                     border-left:4px solid #198038;border-radius:10px;padding:20px 24px;margin:8px 0;">
+                    <div style="font-size:1.6rem;">✅</div>
+                    <div style="font-weight:700;color:#198038;font-size:1.05rem;margin-top:6px;">All Clear — No Active Alerts</div>
+                    <div style="color:#4a5568;font-size:.88rem;margin-top:4px;">All packaging stages are operating within normal parameters.</div>
+                </div>
+                """, unsafe_allow_html=True)
                 return
             
             # Display alert count
@@ -61,19 +68,22 @@ def render_alert_card(alert: Dict, api_client):
         alert: Alert dictionary
         api_client: API client instance
     """
-    # Determine colors based on severity
+    # Determine colors based on severity — IBM Carbon palette
     if alert['severity'] == 'CRITICAL':
-        border_color = "#dc3545"
-        bg_color = "#f8d7da"
+        border_color = "#da1e28"
+        bg_color = "#fff1f1"
         icon = "🔴"
+        text_color = "#da1e28"
     elif alert['severity'] == 'WARNING':
-        border_color = "#ffc107"
-        bg_color = "#fff3cd"
-        icon = "🟡"
+        border_color = "#b45309"
+        bg_color = "#fffbeb"
+        icon = "⚠️"
+        text_color = "#b45309"
     else:
-        border_color = "#17a2b8"
-        bg_color = "#d1ecf1"
-        icon = "🔵"
+        border_color = "#0043ce"
+        bg_color = "#eef2ff"
+        icon = "ℹ️"
+        text_color = "#0043ce"
     
     # Create expander for alert details
     with st.expander(f"{icon} {alert['title']} - {alert['batch_id']}", expanded=False):
@@ -90,12 +100,14 @@ def render_alert_card(alert: Dict, api_client):
             st.markdown(
                 f"""
                 <div style="
-                    background-color: {border_color};
+                    background:{border_color};
                     color: white;
-                    padding: 10px;
-                    border-radius: 5px;
+                    padding: 8px 12px;
+                    border-radius: 6px;
                     text-align: center;
-                    font-weight: bold;
+                    font-weight: 700;
+                    font-size: .85rem;
+                    letter-spacing:.5px;
                 ">
                     {alert['severity']}
                 </div>
@@ -254,11 +266,14 @@ def render_alert_statistics(api_client, hours: int = 24):
                     labels=list(severity_dist.keys()),
                     values=list(severity_dist.values()),
                     hole=0.4,
-                    marker=dict(colors=['#17a2b8', '#ffc107', '#dc3545'])
+                    marker=dict(colors=['#0043ce', '#b45309', '#da1e28']),
+                    textfont=dict(color='#1a2238')
                 )])
                 
                 fig.update_layout(
                     height=300,
+                    paper_bgcolor='rgba(248,250,255,1)',
+                    font=dict(color='#1a2238'),
                     margin=dict(l=20, r=20, t=20, b=20)
                 )
                 
@@ -304,16 +319,17 @@ def render_alert_history(api_client, hours: int = 24):
                 st.markdown(
                     f"""
                     <div style="
-                        padding: 10px;
+                        padding: 10px 14px;
                         margin: 5px 0;
-                        background-color: #f8f9fa;
-                        border-left: 4px solid {'#dc3545' if alert['severity'] == 'CRITICAL' else '#ffc107' if alert['severity'] == 'WARNING' else '#17a2b8'};
-                        border-radius: 5px;
+                        background: white;
+                        border-left: 4px solid {'#da1e28' if alert['severity'] == 'CRITICAL' else '#b45309' if alert['severity'] == 'WARNING' else '#0043ce'};
+                        border-radius: 6px;
+                        box-shadow: 0 1px 4px rgba(0,0,0,.07);
                     ">
-                        <div style="font-weight: bold;">
+                        <div style="font-weight:600;color:#1a2238;">
                             {severity_icon} {alert['title']}
                         </div>
-                        <div style="font-size: 12px; color: #666;">
+                        <div style="font-size: 12px; color: #697077;margin-top:3px;">
                             {alert['timestamp'][:19]} | Batch: {alert['batch_id']} | Status: {alert['status']}
                         </div>
                     </div>

@@ -19,36 +19,43 @@ def render_status_light(
         confidence: Confidence score (0-1)
         size: Size (small, medium, large)
     """
-    # Status colors and icons
     status_config = {
         "GOOD": {
-            "color": "#28a745",
-            "bg_color": "#d4edda",
+            "color": "#42be65",
+            "bg_color": "rgba(66,190,101,0.08)",
+            "glow": "rgba(66,190,101,0.5)",
             "icon": "✓",
             "text": "GOOD",
-            "description": "All systems operating normally"
+            "description": "All systems operating normally",
+            "anim": "pulse-good",
         },
         "WARNING": {
-            "color": "#ffc107",
-            "bg_color": "#fff3cd",
+            "color": "#f1c21b",
+            "bg_color": "rgba(241,194,27,0.08)",
+            "glow": "rgba(241,194,27,0.5)",
             "icon": "⚠",
             "text": "WARNING",
-            "description": "Attention required - parameters outside normal range"
+            "description": "Attention required — parameters outside normal range",
+            "anim": "pulse-warning",
         },
         "SEVERE": {
-            "color": "#dc3545",
-            "bg_color": "#f8d7da",
+            "color": "#fa4d56",
+            "bg_color": "rgba(250,77,86,0.08)",
+            "glow": "rgba(250,77,86,0.5)",
             "icon": "✗",
             "text": "SEVERE",
-            "description": "Critical issue detected - immediate action required"
+            "description": "Critical issue detected — immediate action required",
+            "anim": "pulse-severe",
         },
         "UNKNOWN": {
-            "color": "#6c757d",
-            "bg_color": "#e2e3e5",
+            "color": "#8aa3cc",
+            "bg_color": "rgba(138,163,204,0.08)",
+            "glow": "rgba(138,163,204,0.3)",
             "icon": "?",
             "text": "UNKNOWN",
-            "description": "Status unavailable"
-        }
+            "description": "Status unavailable",
+            "anim": "pulse-good",
+        },
     }
     
     # Size configurations
@@ -70,96 +77,45 @@ def render_status_light(
         }
     }
     
-    # Get configuration
     config = status_config.get(status.upper(), status_config["UNKNOWN"])
     sizes = size_config.get(size, size_config["large"])
-    
-    # Render status light
-    st.markdown(
-        f"""
+    anim = config["anim"]
+    conf_html = (
+        f'<div style="font-size:13px;color:{config["color"]};font-weight:600;margin-top:3px;">'
+        f'Confidence: {confidence:.1%}</div>'
+    ) if confidence is not None else ""
+
+    st.markdown(f"""
+        <style>
+        @keyframes pulse-good    {{ 0%,100%{{box-shadow:0 0 16px #42be6580;}} 50%{{box-shadow:0 0 36px #42be65;}} }}
+        @keyframes pulse-warning {{ 0%,100%{{box-shadow:0 0 16px #f1c21b80;}} 50%{{box-shadow:0 0 36px #f1c21b;}} }}
+        @keyframes pulse-severe  {{
+            0%,100%{{box-shadow:0 0 16px #fa4d5680;transform:scale(1);}}
+            50%{{box-shadow:0 0 40px #fa4d56;transform:scale(1.04);}}
+        }}
+        </style>
         <div style="
-            display: flex;
-            align-items: center;
-            padding: 20px;
-            background-color: {config['bg_color']};
-            border-radius: 15px;
-            border: 3px solid {config['color']};
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            gap: 20px;
+            display:flex; align-items:center; padding:18px 22px;
+            background:{config['bg_color']}; border-radius:14px;
+            border:2px solid {config['color']}44; gap:18px;
+            backdrop-filter:blur(6px);
         ">
-            <!-- Status Light Circle -->
             <div style="
-                width: {sizes['light_size']};
-                height: {sizes['light_size']};
-                background-color: {config['color']};
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: {sizes['icon_size']};
-                color: white;
-                font-weight: bold;
-                box-shadow: 0 0 20px {config['color']};
-                animation: pulse 2s infinite;
-                flex-shrink: 0;
-            ">
-                {config['icon']}
-            </div>
-            
-            <!-- Status Information in Columns -->
-            <div style="
-                display: flex;
-                flex-direction: column;
-                gap: 8px;
-                flex: 1;
-            ">
-                <!-- Status Text -->
-                <div style="
-                    font-size: {sizes['font_size']};
-                    font-weight: bold;
-                    color: {config['color']};
-                ">
-                    {config['text']}
-                </div>
-                
-                <!-- Confidence Score -->
-                {f'''
-                <div style="
-                    font-size: 14px;
-                    color: #666;
-                    font-weight: 500;
-                ">
-                    <span style="color: #333;">Confidence:</span> {confidence:.1%}
-                </div>
-                ''' if confidence is not None else ''}
-                
-                <!-- Description -->
-                <div style="
-                    font-size: 12px;
-                    color: #666;
-                    line-height: 1.4;
-                ">
-                    {config['description']}
-                </div>
+                width:{sizes['light_size']}; height:{sizes['light_size']};
+                background:radial-gradient(circle,{config['color']} 0%,{config['color']}bb 100%);
+                border-radius:50%; display:flex; align-items:center; justify-content:center;
+                font-size:{sizes['icon_size']}; color:white; font-weight:bold; flex-shrink:0;
+                animation:{anim} {'1.2s' if status=='SEVERE' else '2s'} infinite;
+            ">{config['icon']}</div>
+            <div>
+                <div style="font-size:{sizes['font_size']};font-weight:700;color:{config['color']};
+                            letter-spacing:1px;">{config['text']}</div>
+                {conf_html}
+                <div style="font-size:11px;color:#697077;margin-top:5px;line-height:1.4;">
+                    {config['description']}</div>
             </div>
         </div>
-        
-        <style>
-            @keyframes pulse {{
-                0% {{
-                    box-shadow: 0 0 20px {config['color']};
-                }}
-                50% {{
-                    box-shadow: 0 0 40px {config['color']};
-                }}
-                100% {{
-                    box-shadow: 0 0 20px {config['color']};
-                }}
-            }}
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
+    """, unsafe_allow_html=True)
 
 
 def render_status_badge(status: str, confidence: Optional[float] = None) -> None:
@@ -171,10 +127,10 @@ def render_status_badge(status: str, confidence: Optional[float] = None) -> None
         confidence: Confidence score (0-1)
     """
     status_config = {
-        "GOOD": {"color": "#28a745", "icon": "✓"},
-        "WARNING": {"color": "#ffc107", "icon": "⚠"},
-        "SEVERE": {"color": "#dc3545", "icon": "✗"},
-        "UNKNOWN": {"color": "#6c757d", "icon": "?"}
+        "GOOD":    {"color": "#42be65", "icon": "✓"},
+        "WARNING": {"color": "#f1c21b", "icon": "⚠"},
+        "SEVERE":  {"color": "#fa4d56", "icon": "✗"},
+        "UNKNOWN": {"color": "#8aa3cc", "icon": "?"},
     }
     
     config = status_config.get(status.upper(), status_config["UNKNOWN"])
@@ -219,9 +175,9 @@ def render_status_timeline(predictions: list) -> None:
         confidence = pred.get('confidence')
         
         status_config = {
-            "GOOD": {"color": "#28a745", "icon": "✓"},
-            "WARNING": {"color": "#ffc107", "icon": "⚠"},
-            "SEVERE": {"color": "#dc3545", "icon": "✗"}
+            "GOOD":    {"color": "#42be65", "icon": "✓"},
+            "WARNING": {"color": "#f1c21b", "icon": "⚠"},
+            "SEVERE":  {"color": "#fa4d56", "icon": "✗"},
         }
         
         config = status_config.get(status, {"color": "#6c757d", "icon": "?"})
