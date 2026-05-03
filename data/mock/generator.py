@@ -15,7 +15,7 @@ from typing import Dict, List, Optional, Tuple
 import json
 from dataclasses import dataclass, asdict
 
-from config_schema import (
+from data.mock.config_schema import (
     ProcessStage,
     Status,
     ALL_PARAMETERS,
@@ -518,6 +518,57 @@ class MockDataGenerator:
             batch_data.append(data)
         
         return batch_data
+    
+    def generate_single(self, scenario=None) -> ProcessData:
+        """
+        Generate a single data sample
+        
+        Args:
+            scenario: Optional scenario configuration (Scenario object or dict with 'status' and 'stage' keys)
+            
+        Returns:
+            Single ProcessData object
+        """
+        if scenario:
+            # Handle Scenario dataclass from scenarios.py
+            if hasattr(scenario, 'setup_func'):
+                # It's a Scenario object - apply its setup and generate
+                scenario.setup_func(self)
+                if self.anomaly_active:
+                    data = self.generate_anomaly_data()
+                else:
+                    data = self.generate_normal_data()
+                # Clear anomaly after single generation
+                self.clear_anomaly()
+                return data
+            
+            # Handle dictionary configuration
+            elif isinstance(scenario, dict):
+                target_status = scenario.get('status', 'GOOD')
+                target_stage = scenario.get('stage')
+                
+                if target_status in ['WARNING', 'SEVERE'] and target_stage:
+                    # Convert stage string to ProcessStage enum
+                    stage_map = {
+                        'die_attach': ProcessStage.DIE_ATTACH,
+                        'wire_bonding': ProcessStage.WIRE_BONDING,
+                        'molding': ProcessStage.MOLDING,
+                        'curing': ProcessStage.CURING,
+                        'inspection': ProcessStage.INSPECTION
+                    }
+                    
+                    stage_enum = stage_map.get(target_stage, ProcessStage.WIRE_BONDING)
+                    severity = Status.SEVERE if target_status == 'SEVERE' else Status.WARNING
+                    
+                    # Inject anomaly and generate
+                    self.inject_sudden_anomaly(stage_enum, severity, 2)
+                    data = self.generate_anomaly_data()
+                    self.clear_anomaly()
+                    
+                    return data
+        
+        # Default: generate normal data
+        return self.generate_normal_data()
 
 
 # ============================================================================

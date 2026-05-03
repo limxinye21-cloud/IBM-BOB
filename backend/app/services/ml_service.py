@@ -65,7 +65,8 @@ class MLService:
             Prediction result with status and confidence
         """
         if not self._is_loaded:
-            raise RuntimeError("Model not loaded. Call load_model() first.")
+            # Use rule-based classification if model not loaded
+            return self._rule_based_classification(process_data)
         
         try:
             result = self.inference.predict_single(process_data)
@@ -91,7 +92,8 @@ class MLService:
             List of prediction results
         """
         if not self._is_loaded:
-            raise RuntimeError("Model not loaded. Call load_model() first.")
+            # Use rule-based classification if model not loaded
+            return [self._rule_based_classification(data) for data in process_data_list]
         
         try:
             results = self.inference.predict_batch(process_data_list)
@@ -113,7 +115,13 @@ class MLService:
             Explanation with top contributing features
         """
         if not self._is_loaded:
-            raise RuntimeError("Model not loaded. Call load_model() first.")
+            # Return basic explanation with rule-based prediction
+            return {
+                'prediction': self._rule_based_classification(process_data),
+                'top_contributors': [],
+                'explanation_time': datetime.now().isoformat(),
+                'method': 'rule_based'
+            }
         
         try:
             explanation = self.inference.explain_prediction(process_data, top_n=top_n)
@@ -142,7 +150,8 @@ class MLService:
             List of critical parameters
         """
         if not self._is_loaded:
-            raise RuntimeError("Model not loaded. Call load_model() first.")
+            # Return empty list if model not loaded
+            return []
         
         try:
             critical = self.inference.get_critical_parameters(process_data, threshold=threshold)

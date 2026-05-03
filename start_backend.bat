@@ -1,0 +1,22 @@
+@echo off
+echo ================================================================================
+echo AI PACKAGING RELIABILITY COPILOT - Backend API Startup
+echo ================================================================================
+echo.
+
+echo Activating virtual environment...
+call venv\Scripts\activate.bat
+
+echo.
+echo Starting FastAPI backend...
+echo API will be available at: http://localhost:8000
+echo API Documentation: http://localhost:8000/docs
+echo.
+echo Press Ctrl+C to stop the backend
+echo.
+
+python -m uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
+
+pause
+
+@REM Made with Bob

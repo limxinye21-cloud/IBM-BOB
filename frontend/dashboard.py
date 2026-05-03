@@ -106,7 +106,7 @@ def main():
     
     # Sidebar
     with st.sidebar:
-        st.image("https://via.placeholder.com/200x80/1f77b4/ffffff?text=IBM+Bob", use_container_width=True)
+        st.image("https://via.placeholder.com/200x80/1f77b4/ffffff?text=IBM+Bob", width=200)
         st.markdown("---")
         
         # API Status
@@ -217,7 +217,8 @@ def generate_new_data(source: str, scenario: str = None):
         else:
             data = generator.generate_single()
         
-        st.session_state.current_data = data
+        # Convert ProcessData object to dictionary
+        st.session_state.current_data = data.to_dict()
         st.success(f"✓ Generated data with scenario: {scenario}")
     
     elif source == "Manual Input":
@@ -616,17 +617,25 @@ def display_data_details(data: dict):
     )
 
 
-if __name__ == "__main__":
-    main()
-
-# Made with Bob
-
 def display_copilot_chat(data: dict):
     """Display AI copilot chat interface"""
     
     api_client = st.session_state.api_client
     
     # Chat interface
+    render_chat_interface(api_client, data)
+    
+    st.markdown("---")
+    
+    # Quick actions
+    render_quick_actions(api_client, data)
+    
+    st.markdown("---")
+    
+    # Statistics
+    st.markdown("### 📊 Copilot Statistics")
+    render_copilot_stats(api_client)
+
 
 def display_alerts_tab():
     """Display alerts management tab"""
@@ -671,16 +680,9 @@ def display_alerts_tab():
         else:
             st.warning("No data available - Generate data first")
 
-    render_chat_interface(api_client, data)
-    
-    st.markdown("---")
-    
-    # Quick actions
-    render_quick_actions(api_client, data)
-    
-    st.markdown("---")
-    
-    # Statistics
-    st.markdown("### 📊 Copilot Statistics")
-    render_copilot_stats(api_client)
+
+if __name__ == "__main__":
+    main()
+
+# Made with Bob
 

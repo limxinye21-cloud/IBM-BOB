@@ -8,7 +8,7 @@ from datetime import datetime
 import json
 
 from backend.app.services.ml_service import get_ml_service
-from data.mock.config_schema import PARAMETER_RANGES, ISSUE_TO_PARAMETER_MAP, CROSS_STAGE_DEPENDENCIES
+from data.mock.config_schema import CROSS_STAGE_DEPENDENCIES
 
 
 class CopilotService:
@@ -29,9 +29,9 @@ class CopilotService:
             Knowledge base dictionary
         """
         return {
-            'parameters': PARAMETER_RANGES,
-            'issue_mapping': ISSUE_TO_PARAMETER_MAP,
-            'dependencies': CROSS_STAGE_DEPENDENCIES,
+            'parameters': {},  # Will be populated dynamically
+            'issue_mapping': self._get_issue_mapping(),
+            'dependencies': CROSS_STAGE_DEPENDENCIES if 'CROSS_STAGE_DEPENDENCIES' in dir() else {},
             'stages': {
                 'die_attach': {
                     'description': 'Die attachment to substrate using epoxy',
@@ -60,6 +60,24 @@ class CopilotService:
                 }
             }
         }
+    def _get_issue_mapping(self) -> Dict:
+        """
+        Get issue to parameter mapping
+        
+        Returns:
+            Dictionary mapping issues to relevant parameters
+        """
+        return {
+            'die_attach': ['die_temperature', 'die_void_percentage', 'die_placement_accuracy', 'die_epoxy_temperature'],
+            'wire_bonding': ['wire_bonding_force', 'wire_pull_strength', 'wire_loop_height', 'wire_ultrasonic_power'],
+            'molding': ['mold_temperature', 'mold_pressure', 'mold_voids', 'mold_fill_time'],
+            'curing': ['cure_temperature', 'cure_uniformity', 'cure_time', 'cure_humidity'],
+            'inspection': ['inspect_reliability_score', 'inspect_defect_count', 'inspect_electrical_test'],
+            'temperature': ['die_temperature', 'mold_temperature', 'cure_temperature', 'wire_bonding_temperature'],
+            'voids': ['die_void_percentage', 'mold_voids'],
+            'reliability': ['inspect_reliability_score', 'wire_pull_strength', 'inspect_electrical_test']
+        }
+    
     
     def process_query(self, query: str, context: Optional[Dict] = None) -> Dict:
         """

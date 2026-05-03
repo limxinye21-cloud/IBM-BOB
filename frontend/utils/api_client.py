@@ -58,6 +58,10 @@ class APIClient:
             response = requests.post(url, json=data, timeout=10)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as e:
+            error_detail = f"HTTP {e.response.status_code}: {e.response.text if hasattr(e.response, 'text') else str(e)}"
+            st.error(f"API Error: {error_detail}")
+            return {"success": False, "error": error_detail}
         except requests.exceptions.RequestException as e:
             st.error(f"API Error: {e}")
             return {"success": False, "error": str(e)}
@@ -167,7 +171,7 @@ class APIClient:
         params = {"hours": hours}
         if status_filter:
             params["status"] = status_filter
-        return self._post("/data/historical", params)
+        return self._get("/data/historical", params)
     
     def get_data_stats(self) -> Dict:
         """Get data statistics"""

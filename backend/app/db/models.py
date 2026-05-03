@@ -82,6 +82,7 @@ class Prediction(Base):
     timestamp = Column(DateTime, nullable=False)
     predicted_status = Column(String(20), nullable=False, index=True)
     confidence = Column(Float)
+    probabilities = Column(Text)  # JSON string with class probabilities
     feature_importance = Column(Text)  # JSON string
     model_version = Column(String(20))
     created_at = Column(DateTime, default=func.now())

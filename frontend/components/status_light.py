@@ -79,13 +79,13 @@ def render_status_light(
         f"""
         <div style="
             display: flex;
-            flex-direction: column;
             align-items: center;
             padding: 20px;
             background-color: {config['bg_color']};
             border-radius: 15px;
             border: 3px solid {config['color']};
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            gap: 20px;
         ">
             <!-- Status Light Circle -->
             <div style="
@@ -101,40 +101,46 @@ def render_status_light(
                 font-weight: bold;
                 box-shadow: 0 0 20px {config['color']};
                 animation: pulse 2s infinite;
-                margin-bottom: 15px;
+                flex-shrink: 0;
             ">
                 {config['icon']}
             </div>
             
-            <!-- Status Text -->
+            <!-- Status Information in Columns -->
             <div style="
-                font-size: {sizes['font_size']};
-                font-weight: bold;
-                color: {config['color']};
-                margin-bottom: 10px;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                flex: 1;
             ">
-                {config['text']}
-            </div>
-            
-            <!-- Confidence Score -->
-            {f'''
-            <div style="
-                font-size: 14px;
-                color: #666;
-                margin-bottom: 10px;
-            ">
-                Confidence: {confidence:.1%}
-            </div>
-            ''' if confidence is not None else ''}
-            
-            <!-- Description -->
-            <div style="
-                font-size: 12px;
-                color: #666;
-                text-align: center;
-                max-width: 300px;
-            ">
-                {config['description']}
+                <!-- Status Text -->
+                <div style="
+                    font-size: {sizes['font_size']};
+                    font-weight: bold;
+                    color: {config['color']};
+                ">
+                    {config['text']}
+                </div>
+                
+                <!-- Confidence Score -->
+                {f'''
+                <div style="
+                    font-size: 14px;
+                    color: #666;
+                    font-weight: 500;
+                ">
+                    <span style="color: #333;">Confidence:</span> {confidence:.1%}
+                </div>
+                ''' if confidence is not None else ''}
+                
+                <!-- Description -->
+                <div style="
+                    font-size: 12px;
+                    color: #666;
+                    line-height: 1.4;
+                ">
+                    {config['description']}
+                </div>
             </div>
         </div>
         

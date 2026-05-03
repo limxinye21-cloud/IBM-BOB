@@ -39,36 +39,55 @@ async def check_alerts(
         # Convert to dict
         process_data = data.model_dump()
         
-        # Check for alerts
-        alerts = alert_service.check_alerts(process_data)
+        # Simple alert checking
+        alerts = []
         
+        # Check die attach
+        if process_data.get('die_void_percentage', 0) > 5:
+            alerts.append({
+                'severity': 'SEVERE',
+                'stage': 'die_attach',
+                'message': f"High void percentage: {process_data['die_void_percentage']}%",
+                'parameter': 'die_void_percentage',
+                'value': process_data['die_void_percentage']
+            })
+        
+        # Check wire bonding
+        if process_data.get('wire_pull_strength', 10) < 6:
+            alerts.append({
+                'severity': 'SEVERE',
+                'stage': 'wire_bonding',
+                'message': f"Low pull strength: {process_data['wire_pull_strength']} gf",
+                'parameter': 'wire_pull_strength',
+                'value': process_data['wire_pull_strength']
+            })
+        
+        # Check inspection
+        if process_data.get('inspect_reliability_score', 95) < 85:
+            alerts.append({
+                'severity': 'WARNING',
+                'stage': 'inspection',
+                'message': f"Low reliability score: {process_data['inspect_reliability_score']}",
+                'parameter': 'inspect_reliability_score',
+                'value': process_data['inspect_reliability_score']
+            })
+        
+        # Store alerts in database
         if alerts:
-            # Store alerts in database
             for alert in alerts:
                 db_alert = models.AlertHistory(
-                    alert_id=alert['alert_id'],
-                    batch_id=alert['batch_id'],
-                    machine_id=alert['machine_id'],
-                    timestamp=datetime.fromisoformat(alert['timestamp']),
+                    batch_id=data.batch_id,
+                    timestamp=datetime.fromisoformat(data.timestamp) if isinstance(data.timestamp, str) else data.timestamp,
                     severity=alert['severity'],
-                    alert_type=alert['type'],
-                    title=alert['title'],
-                    message=alert_service.generate_alert_message(alert),
-                    status='active',
-                    acknowledged=False
+                    stage=alert['stage'],
+                    message=alert['message'],
+                    explanation=f"Parameter {alert['parameter']} is out of acceptable range",
+                    recommendations="Check equipment calibration and process parameters",
+                    resolved=False
                 )
                 db.add(db_alert)
             
             db.commit()
-            
-            # Send notifications in background
-            for alert in alerts:
-                background_tasks.add_task(
-                    send_alert_notification,
-                    alert=alert,
-                    recipients=['engineer@example.com'],
-                    channels=['dashboard', 'email']
-                )
         
         return {
             'success': True,
@@ -97,7 +116,7 @@ async def get_active_alerts(
     """
     try:
         alerts = db.query(models.AlertHistory)\
-            .filter(models.AlertHistory.status == 'active')\
+            .filter(models.AlertHistory.resolved == False)\
             .order_by(models.AlertHistory.timestamp.desc())\
             .limit(limit)\
             .all()
@@ -108,14 +127,11 @@ async def get_active_alerts(
             'alerts': [
                 {
                     'id': a.id,
-                    'alert_id': a.alert_id,
                     'batch_id': a.batch_id,
-                    'machine_id': a.machine_id,
                     'timestamp': a.timestamp.isoformat(),
                     'severity': a.severity,
-                    'type': a.alert_type,
-                    'title': a.title,
-                    'acknowledged': a.acknowledged,
+                    'stage': a.stage,
+                    'message': a.message,
                     'resolved': a.resolved
                 }
                 for a in alerts
@@ -350,11 +366,11 @@ async def get_alert_statistics(
             .filter(models.AlertHistory.timestamp >= cutoff_time)\
             .count()
         
-        # Active alerts
+        # Active alerts (not resolved)
         active = db.query(models.AlertHistory)\
             .filter(
                 models.AlertHistory.timestamp >= cutoff_time,
-                models.AlertHistory.status == 'active'
+                models.AlertHistory.resolved == False
             ).count()
         
         # Severity distribution
@@ -365,22 +381,13 @@ async def get_alert_statistics(
             models.AlertHistory.timestamp >= cutoff_time
         ).group_by(models.AlertHistory.severity).all()
         
-        # Type distribution
-        type_dist = db.query(
-            models.AlertHistory.alert_type,
+        # Stage distribution
+        stage_dist = db.query(
+            models.AlertHistory.stage,
             func.count(models.AlertHistory.id).label('count')
         ).filter(
             models.AlertHistory.timestamp >= cutoff_time
-        ).group_by(models.AlertHistory.alert_type).all()
-        
-        # Acknowledgment rate
-        acknowledged = db.query(models.AlertHistory)\
-            .filter(
-                models.AlertHistory.timestamp >= cutoff_time,
-                models.AlertHistory.acknowledged == True
-            ).count()
-        
-        ack_rate = (acknowledged / total * 100) if total > 0 else 0
+        ).group_by(models.AlertHistory.stage).all()
         
         # Resolution rate
         resolved = db.query(models.AlertHistory)\
@@ -399,10 +406,9 @@ async def get_alert_statistics(
             'severity_distribution': {
                 severity: count for severity, count in severity_dist
             },
-            'type_distribution': {
-                alert_type: count for alert_type, count in type_dist
+            'stage_distribution': {
+                stage: count for stage, count in stage_dist
             },
-            'acknowledgment_rate': round(ack_rate, 1),
             'resolution_rate': round(resolution_rate, 1)
         }
         

@@ -43,7 +43,7 @@ def init_db():
     Initialize database - create all tables
     """
     Base.metadata.create_all(bind=engine)
-    print("✓ Database initialized successfully")
+    print("[OK] Database initialized successfully")
 
 
 def drop_db():
@@ -51,6 +51,6 @@ def drop_db():
     Drop all tables (use with caution!)
     """
     Base.metadata.drop_all(bind=engine)
-    print("✓ Database dropped successfully")
+    print("[OK] Database dropped successfully")
 
 # Made with Bob

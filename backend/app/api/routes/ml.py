@@ -5,6 +5,7 @@ ML API routes for AI Packaging Reliability Copilot
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Dict
 from sqlalchemy.orm import Session
+import json
 
 from backend.app.db.database import get_db
 from backend.app.db import models
@@ -70,7 +71,7 @@ async def predict_status(
             timestamp=datetime.fromisoformat(data.timestamp) if isinstance(data.timestamp, str) else data.timestamp,
             predicted_status=result['status'],
             confidence=result['confidence'],
-            probabilities=result['probabilities']
+            probabilities=json.dumps(result['probabilities'])  # Convert dict to JSON string
         )
         db.add(prediction)
         db.commit()
@@ -118,7 +119,7 @@ async def predict_batch(
                 timestamp=datetime.fromisoformat(data.timestamp) if isinstance(data.timestamp, str) else data.timestamp,
                 predicted_status=result['status'],
                 confidence=result['confidence'],
-                probabilities=result['probabilities']
+                probabilities=json.dumps(result['probabilities'])  # Convert dict to JSON string
             )
             db.add(prediction)
             predictions.append(prediction)
